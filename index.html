@@ -180,6 +180,20 @@ async function deleteReport(storeName, reporterName) {
   }
 }
 
+function openUpdateForm(storeName, status, comment, lat, lng) {
+  tapLat = lat;
+  tapLng = lng;
+  document.getElementById('store-name').value = storeName;
+  document.getElementById('comment').value = comment || '';
+  document.getElementById('reporter-name').value = '';
+  selectStatus(status);
+  document.getElementById('panel').style.display = 'block';
+  document.getElementById('pin-coords').textContent = '更新中：' + storeName;
+  document.getElementById('map-hint').textContent = '✏️ 下のフォームで情報を更新してください';
+  document.getElementById('panel').scrollIntoView({behavior:'smooth'});
+  map.closePopup();
+}
+
 function createMarker(d) {
   if(!d.lat || !d.lng) return;
   const icon = L.divIcon({
@@ -187,12 +201,15 @@ function createMarker(d) {
     className: '', iconAnchor:[8,8], popupAnchor:[0,-10]
   });
   const m = L.marker([parseFloat(d.lat), parseFloat(d.lng)], {icon}).addTo(map);
+  const sn = d.storeName.replace(/'/g,"\\'");
+  const cm = (d.comment||'').replace(/'/g,"\\'");
   const popupHtml = `
     <b style="font-size:13px;">${d.storeName}</b><br>
     ${getStatusLabel(d.status)}<br>
     ${d.comment ? '<span style="font-size:12px;">'+d.comment+'</span><br>' : ''}
     <small style="color:#999;">${d.timestamp||''}</small>
-    <button class="popup-del-btn" onclick="askNameForDelete('${d.storeName.replace(/'/g,"\\'")}')">🗑️ この情報を削除する</button>
+    <button class="popup-del-btn" style="background:#e8f5e9;border-color:#27ae60;color:#1a5c2a;" onclick="openUpdateForm('${sn}','${d.status}','${cm}','${d.lat}','${d.lng}')">✏️ この情報を更新する</button>
+    <button class="popup-del-btn" onclick="askNameForDelete('${sn}')">🗑️ この情報を削除する</button>
   `;
   m.bindPopup(popupHtml);
   markers.push(m);
