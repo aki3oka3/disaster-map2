@@ -66,7 +66,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   <div class="legend-item"><div class="dot open"></div><span>営業中</span></div>
   <div class="legend-item"><div class="dot limited"></div><span>時短/品薄</span></div>
   <div class="legend-item"><div class="dot closed"></div><span>閉店</span></div>
-  <button onclick="locateMe()" style="margin-left:auto;background:white;border:1.5px solid #4285f4;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#4285f4;cursor:pointer;display:flex;align-items:center;gap:4px;">📍 現在地</button>
+  <button id="locate-btn" onclick="locateMe()" style="margin-left:auto;background:white;border:1.5px solid #4285f4;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;color:#4285f4;cursor:pointer;display:flex;align-items:center;gap:4px;">📍 現在地</button>
 </div>
 
 <div id="map-hint">📍 報告したい場所を地図上でタップしてください</div>
@@ -124,23 +124,26 @@ let tapLng = null;
 
 function locateMe() {
   if(!navigator.geolocation) { alert('位置情報が使えません'); return; }
+  const btn = document.getElementById('locate-btn');
+  if(btn) btn.textContent = '取得中...';
   navigator.geolocation.getCurrentPosition(
     function(pos) {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       map.setView([lat, lng], 15);
-      // 現在地マーカーを更新
       if(window._locateMarker) map.removeLayer(window._locateMarker);
       const icon = L.divIcon({
         html: '<div style="width:14px;height:14px;border-radius:50%;background:#4285f4;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>',
         className: '', iconAnchor:[7,7]
       });
       window._locateMarker = L.marker([lat, lng], {icon}).addTo(map).bindPopup('📍 現在地');
+      if(btn) btn.textContent = '📍 現在地';
     },
     function(err) {
       alert('位置情報を取得できませんでした。ブラウザの設定で位置情報を許可してください。');
+      if(btn) btn.textContent = '📍 現在地';
     },
-    { enableHighAccuracy: true, timeout: 10000 }
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   );
 }
 
@@ -248,7 +251,7 @@ function createMarker(d) {
     <b style="font-size:13px;">${d.storeName}</b><br>
     ${getStatusLabel(d.status)}<br>
     ${d.comment ? '<span style="font-size:12px;">'+d.comment+'</span><br>' : ''}
-    <span style="font-size:13px;color:#555;display:block;margin-top:4px;">📅 ${formatDate(d.timestamp)}</span>
+    <span style="font-size:13px;color:#555;display:block;margin-top:4px;">🔄 更新：${formatDate(d.timestamp)}</span>
     <button class="popup-del-btn" style="background:#e8f5e9;border-color:#27ae60;color:#1a5c2a;" onclick="openUpdateForm('${sn}','${d.status}','${cm}','${d.lat}','${d.lng}')">✏️ この情報を更新する</button>
     <button class="popup-del-btn" onclick="askNameForDelete('${sn}')">🗑️ この情報を削除する</button>
   `;
@@ -407,6 +410,23 @@ window.addEventListener('load', () => {
     document.getElementById('map-hint').textContent='✏️ 下のフォームに店舗情報を入力してください';
     document.getElementById('panel').scrollIntoView({behavior:'smooth'});
   });
+
+  // ページ読み込み時に現在地へ自動移動
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        map.setView([lat, lng], 15);
+        const icon = L.divIcon({
+          html: '<div style="width:14px;height:14px;border-radius:50%;background:#4285f4;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>',
+          className: '', iconAnchor:[7,7]
+        });
+        window._locateMarker = L.marker([lat, lng], {icon}).addTo(map).bindPopup('📍 現在地');
+      },
+      function() {} // 拒否された場合は名護市のまま
+    );
+  }
 
   loadData();
 });
