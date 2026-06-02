@@ -121,6 +121,14 @@ let tempMarker = null;
 let tapLat = null;
 let tapLng = null;
 
+function formatDate(ts) {
+  if(!ts) return '';
+  // "2024/6/1 14:30:00" → "2024年6月1日 14:30"
+  const m = ts.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)/);
+  if(m) return m[1]+'年'+m[2]+'月'+m[3]+'日 '+m[4]+':'+m[5];
+  return ts;
+}
+
 function selectStatus(s) {
   selectedStatus = s;
   ['open','limited','closed'].forEach(t => {
@@ -158,7 +166,7 @@ async function deleteReport(storeName, reporterName) {
       const callbackName = 'cb_' + Date.now();
       window[callbackName] = function(result) {
         delete window[callbackName];
-        document.getElementById('gas-script2')?.remove();
+        document.getElementById('gas-script2-' + callbackName)?.remove();
         if(result === 'NG_NAME') {
           showToast('⚠️ お名前が一致しません');
         } else {
@@ -169,7 +177,7 @@ async function deleteReport(storeName, reporterName) {
       };
       params.append('callback', callbackName);
       const script = document.createElement('script');
-      script.id = 'gas-script2';
+      script.id = 'gas-script2-' + callbackName;
       script.src = SHEET_URL + '?' + params.toString();
       script.onerror = () => resolve();
       document.head.appendChild(script);
@@ -207,7 +215,7 @@ function createMarker(d) {
     <b style="font-size:13px;">${d.storeName}</b><br>
     ${getStatusLabel(d.status)}<br>
     ${d.comment ? '<span style="font-size:12px;">'+d.comment+'</span><br>' : ''}
-    <small style="color:#999;">${d.timestamp||''}</small>
+    <span style="font-size:13px;color:#555;display:block;margin-top:4px;">📅 ${formatDate(d.timestamp)}</span>
     <button class="popup-del-btn" style="background:#e8f5e9;border-color:#27ae60;color:#1a5c2a;" onclick="openUpdateForm('${sn}','${d.status}','${cm}','${d.lat}','${d.lng}')">✏️ この情報を更新する</button>
     <button class="popup-del-btn" onclick="askNameForDelete('${sn}')">🗑️ この情報を削除する</button>
   `;
@@ -225,7 +233,7 @@ function renderList(data) {
     <div class="store-item ${d.status}">
       <div class="store-info">
         <div class="store-name">${d.storeName||''}</div>
-        <div class="store-time">${d.comment ? d.comment + ' · ' : ''}${d.timestamp||''}</div>
+        <div class="store-time">${d.comment ? d.comment + ' · ' : ''}${formatDate(d.timestamp)}</div>
       </div>
       <div class="store-right">
         ${getStatusLabel(d.status)}
@@ -331,6 +339,26 @@ window.addEventListener('load', () => {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap', maxZoom:19
   }).addTo(map);
+
+  // 位置情報を取得して現在地を中心に表示
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        map.setView([lat, lng], 15);
+        // 現在地マーカー
+        const icon = L.divIcon({
+          html: '<div style="width:14px;height:14px;border-radius:50%;background:#4285f4;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>',
+          className: '', iconAnchor:[7,7]
+        });
+        L.marker([lat, lng], {icon}).addTo(map).bindPopup('📍 現在地');
+      },
+      function() {
+        // 位置情報が拒否された場合は名護市を表示
+      }
+    );
+  }
 
   map.on('click', function(e) {
     tapLat = e.latlng.lat.toFixed(6);
