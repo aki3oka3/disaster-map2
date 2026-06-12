@@ -153,6 +153,7 @@ let selectedStatus = null;
 let map, markers = [], tempMarker = null;
 let tapLat = null, tapLng = null;
 let myNickname = '';
+let editingId = null; // 更新中の報告ID（新規はnull）
 
 // ユーザー入力をHTMLに埋め込む前のエスケープ（XSS対策）
 function esc(s) {
@@ -165,32 +166,25 @@ function safeStatus(s) {
   return ['open','limited','closed'].includes(s) ? s : 'closed';
 }
 
-// ── JSONP通信（タイムアウト・通信エラーを失敗として検知する）──
-function jsonpCall(params, timeoutMs) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*100000);
-    let done = false;
-    let timer = null;
-    const finish = (ok, val) => {
-      if(done) return;
-      done = true;
-      clearTimeout(timer);
-      delete window[cbName];
-      document.getElementById('jsonp-'+cbName)?.remove();
-      ok ? resolve(val) : reject(val);
-    };
-    timer = setTimeout(() => finish(false, new Error('サーバーから応答がありません')), timeoutMs || 8000);
-    window[cbName] = result => finish(true, result);
-    const p = new URLSearchParams(params);
-    p.append('callback', cbName);
-    const script = document.createElement('script');
-    script.id = 'jsonp-'+cbName;
-    // サーバーがcallbackを呼ばない応答でも、読み込み成功＝サーバー到達とみなす
-    script.onload = () => finish(true, null);
-    script.onerror = () => finish(false, new Error('通信エラー'));
-    script.src = SHEET_URL + '?' + p.toString();
-    document.head.appendChild(script);
-  });
+// ── 端末ID（削除の本人確認用。サーバーに送るだけで画面には出さない）──
+function getDeviceId() {
+  let id = localStorage.getItem('disaster_device_id');
+  if(!id) {
+    id = 'dev_' + Date.now() + '_' + Math.floor(Math.random()*1000000000);
+    localStorage.setItem('disaster_device_id', id);
+  }
+  return id;
+}
+
+// ── GAS通信（HTTPエラー・サーバーのエラー応答を検知して例外にする）──
+async function apiCall(params) {
+  const res = await fetch(SHEET_URL + '?' + new URLSearchParams(params));
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const result = await res.json();
+  if(result && result.status && result.status !== 'ok') {
+    throw new Error(result.message || 'サーバーエラー');
+  }
+  return result;
 }
 
 // ── ニックネーム管理 ──
@@ -210,19 +204,21 @@ function resetNickname() {
   document.getElementById('nickname-modal').style.display = 'flex';
 }
 
-// ── 自分の投稿管理（localStorage）──
-function saveMyPost(storeName) {
-  const posts = JSON.parse(localStorage.getItem('my_posts') || '[]');
-  if(!posts.includes(storeName)) posts.push(storeName);
-  localStorage.setItem('my_posts', JSON.stringify(posts));
+// ── 自分の投稿管理（localStorage・報告ID単位）──
+function saveMyPost(id) {
+  if(!id) return;
+  const posts = JSON.parse(localStorage.getItem('my_post_ids') || '[]');
+  if(!posts.includes(id)) posts.push(id);
+  localStorage.setItem('my_post_ids', JSON.stringify(posts));
 }
-function removeMyPost(storeName) {
-  const posts = JSON.parse(localStorage.getItem('my_posts') || '[]');
-  localStorage.setItem('my_posts', JSON.stringify(posts.filter(p => p !== storeName)));
+function removeMyPost(id) {
+  const posts = JSON.parse(localStorage.getItem('my_post_ids') || '[]');
+  localStorage.setItem('my_post_ids', JSON.stringify(posts.filter(p => p !== id)));
 }
-function isMyPost(storeName) {
-  const posts = JSON.parse(localStorage.getItem('my_posts') || '[]');
-  return posts.includes(storeName);
+function isMyPost(id) {
+  if(!id) return false;
+  const posts = JSON.parse(localStorage.getItem('my_post_ids') || '[]');
+  return posts.includes(id);
 }
 
 // ── ステータス ──
@@ -282,6 +278,7 @@ function locateMe() {
 function cancelPin() {
   if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
   tapLat = null; tapLng = null;
+  editingId = null;
   selectedStatus = null;
   ['open','limited','closed'].forEach(t => { document.getElementById('btn-'+t).className = 'status-btn'; });
   document.getElementById('store-name').value = '';
@@ -292,37 +289,40 @@ function cancelPin() {
 }
 
 // ── 更新フォームを開く ──
-function openUpdateForm(storeName, status, comment, lat, lng) {
-  tapLat = lat; tapLng = lng;
-  document.getElementById('store-name').value = storeName;
-  document.getElementById('original-store-name').value = storeName;
-  document.getElementById('comment').value = comment || '';
-  selectStatus(status);
+function openUpdateForm(d) {
+  editingId = d.id || null;
+  tapLat = d.lat; tapLng = d.lng;
+  document.getElementById('store-name').value = d.storeName;
+  document.getElementById('original-store-name').value = d.storeName;
+  document.getElementById('comment').value = d.comment || '';
+  selectStatus(safeStatus(d.status));
   document.getElementById('panel').style.display = 'block';
-  document.getElementById('pin-coords').textContent = '更新中：' + storeName;
+  document.getElementById('pin-coords').textContent = '更新中：' + d.storeName;
   document.getElementById('map-hint').textContent = '✏️ 下のフォームで情報を更新してください';
   document.getElementById('panel').scrollIntoView({behavior: 'smooth'});
   map.closePopup();
 }
 
 // ── 削除 ──
-function askNameForDelete(storeName) {
-  if(!isMyPost(storeName)) { showToast('⚠️ 自分が登録した情報のみ削除できます'); return; }
-  if(!confirm('「' + storeName + '」の情報を削除しますか？')) return;
-  deleteReport(storeName, myNickname);
+function askNameForDelete(d) {
+  if(!isMyPost(d.id)) { showToast('⚠️ 自分が登録した情報のみ削除できます'); return; }
+  if(!confirm('「' + d.storeName + '」の情報を削除しますか？')) return;
+  deleteReport(d);
 }
-async function deleteReport(storeName, reporterName) {
+async function deleteReport(d) {
   try {
-    const result = await jsonpCall({ action:'delete', storeName, reporterName });
-    if(result === 'NG_NAME') {
-      showToast('⚠️ 削除できませんでした（登録時のニックネームと一致しません）');
-      return;
-    }
-    removeMyPost(storeName);
+    await apiCall({
+      action: 'delete',
+      id: d.id || '',
+      storeName: d.storeName,
+      reporterName: myNickname,
+      deviceId: getDeviceId()
+    });
+    removeMyPost(d.id);
     showToast('🗑️ 削除しました');
-    setTimeout(loadData, 1500);
+    setTimeout(loadData, 1000);
   } catch(e) {
-    showToast('⚠️ 削除できませんでした。通信状況を確認してください');
+    showToast('⚠️ ' + (e.message || '削除できませんでした。通信状況を確認してください'));
   }
 }
 
@@ -346,13 +346,13 @@ function createMarker(d) {
   const upd = document.createElement('button');
   upd.className = 'popup-btn popup-btn-update';
   upd.textContent = '✏️ この情報を更新する';
-  upd.onclick = () => openUpdateForm(d.storeName, st, d.comment || '', d.lat, d.lng);
+  upd.onclick = () => openUpdateForm(d);
   div.appendChild(upd);
-  if(isMyPost(d.storeName)) {
+  if(isMyPost(d.id)) {
     const del = document.createElement('button');
     del.className = 'popup-btn popup-btn-delete';
     del.textContent = '🗑️ この情報を削除する';
-    del.onclick = () => askNameForDelete(d.storeName);
+    del.onclick = () => askNameForDelete(d);
     div.appendChild(del);
   }
   m.bindPopup(div);
@@ -366,21 +366,25 @@ function renderList(data) {
     c.innerHTML = '<div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">まだ報告がありません</div>';
     return;
   }
-  c.innerHTML = data.map(d => {
+  c.innerHTML = '';
+  data.forEach(d => {
     const st = safeStatus(d.status);
-    return '<div class="store-item '+st+'">' +
+    const item = document.createElement('div');
+    item.className = 'store-item ' + st;
+    item.innerHTML =
       '<div class="store-info">' +
         '<div class="store-name">'+esc(d.storeName||'')+'</div>' +
         '<div class="store-time">'+(d.comment ? esc(d.comment)+' · ' : '')+esc(formatDate(d.timestamp))+'</div>' +
       '</div>' +
-      '<div class="store-right">' +
-        getStatusLabel(st) +
-        (isMyPost(d.storeName) ? '<button class="del-btn" data-store="'+esc(d.storeName||'')+'">削除</button>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
-  c.querySelectorAll('.del-btn').forEach(b => {
-    b.addEventListener('click', () => askNameForDelete(b.dataset.store));
+      '<div class="store-right">' + getStatusLabel(st) + '</div>';
+    if(isMyPost(d.id)) {
+      const del = document.createElement('button');
+      del.className = 'del-btn';
+      del.textContent = '削除';
+      del.onclick = () => askNameForDelete(d);
+      item.querySelector('.store-right').appendChild(del);
+    }
+    c.appendChild(item);
   });
 }
 
@@ -412,26 +416,29 @@ async function submitReport() {
   btn.textContent = '送信中...'; btn.disabled = true;
   try {
     const originalName = document.getElementById('original-store-name').value.trim();
-    await jsonpCall({
+    // 更新時は既存ID、新規はここでIDを発行（同名店舗も別々に登録できる）
+    const id = editingId || ('store_' + Date.now() + '_' + Math.floor(Math.random()*10000));
+    const result = await apiCall({
       action: 'post',
+      id: id,
       timestamp: new Date().toLocaleString('ja-JP'),
       storeName: name,
       originalStoreName: originalName || name,
       status: selectedStatus,
       comment: comment,
       reporterName: rName,
+      deviceId: getDeviceId(),
       lat: tapLat || '',
       lng: tapLng || ''
     });
-    // ここに来るのはサーバーに届いたことを確認できた場合のみ
-    if(originalName && originalName !== name) removeMyPost(originalName);
-    saveMyPost(name);
+    // ここに来るのはサーバーに保存できたことを確認できた場合のみ
+    saveMyPost((result && result.id) ? result.id : id);
     showToast('✅ 送信しました！ありがとうございます');
     cancelPin();
-    setTimeout(loadData, 1500);
+    setTimeout(loadData, 1000);
   } catch(e) {
     // 失敗時は入力内容を消さずに残し、再送信できるようにする
-    showToast('⚠️ 送信できませんでした。通信状況を確認して、もう一度お試しください');
+    showToast('⚠️ ' + (e.message || '送信できませんでした。通信状況を確認して、もう一度お試しください'));
   } finally {
     btn.textContent = '📤 送信する'; btn.disabled = false;
   }
