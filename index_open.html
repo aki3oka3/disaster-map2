@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>災害時 店舗状況マップ</title>
+<!-- Leafletは自サイト同梱版を優先（CDN障害対策）。読み込めない場合のみCDNを使う -->
+<link rel="stylesheet" href="leaflet/leaflet.css"/>
+<script src="leaflet/leaflet.js"></script>
+<script>
+if (typeof L === 'undefined') {
+  document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>');
+  document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+}
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-NBPZGED7Q0"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-NBPZGED7Q0');
+</script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; }
+#header { background: #c0392b; color: white; padding: 10px 16px; }
+#header h1 { font-size: 16px; font-weight: 700; }
+#header .sub { font-size: 11px; opacity: 0.85; }
+#legend { display: flex; gap: 12px; padding: 8px 16px; background: white; border-bottom: 1px solid #e0e0e0; font-size: 12px; align-items: center; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.open { background: #27ae60; }
+.dot.closed { background: #e74c3c; }
+.dot.limited { background: #f39c12; }
+#map-hint { background: #fff8e1; border-bottom: 2px solid #f0c040; padding: 12px 16px; font-size: 15px; font-weight: 700; color: #7a5c00; text-align: center; }
+#map-wrap { position: relative; }
+#map { width: 100%; height: 380px; }
+#locate-btn { position: absolute; bottom: 10px; right: 10px; z-index: 1000; width: 36px; height: 36px; background: #fff; border: 2px solid #bbb; border-radius: 8px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+#panel { background: white; padding: 14px 16px; border-top: 3px solid #c0392b; display: none; }
+#panel h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: #333; }
+.pin-coords { font-size: 12px; color: #888; margin-bottom: 10px; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; }
+.form-row { margin-bottom: 10px; }
+.form-row label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; font-weight: 600; }
+.form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.status-btns { display: flex; gap: 8px; }
+.status-btn { flex: 1; padding: 9px; border: 2px solid #ddd; border-radius: 8px; background: white; font-size: 13px; font-weight: 600; cursor: pointer; }
+.status-btn.active-open { background: #27ae60; color: white; border-color: #27ae60; }
+.status-btn.active-closed { background: #e74c3c; color: white; border-color: #e74c3c; }
+.status-btn.active-limited { background: #f39c12; color: white; border-color: #f39c12; }
+.admin-note { font-size: 11px; color: #888; margin-top: 4px; }
+.btn-row { display: flex; gap: 8px; margin-top: 10px; }
+#submit-btn { flex: 3; padding: 11px; background: #c0392b; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+#cancel-btn { flex: 1; padding: 11px; background: white; color: #888; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; cursor: pointer; }
+#status-list { padding: 10px 16px 16px; background: #fafafa; }
+#status-list h2 { font-size: 13px; font-weight: 700; color: #555; margin-bottom: 8px; }
+.store-item { background: white; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; border-left: 4px solid #ddd; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); gap: 8px; }
+.store-item.open { border-left-color: #27ae60; }
+.store-item.closed { border-left-color: #e74c3c; }
+.store-item.limited { border-left-color: #f39c12; }
+.store-info { flex: 1; min-width: 0; }
+.store-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.store-time { font-size: 11px; color: #999; margin-top: 2px; }
+.store-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.tag-open { color: #27ae60; font-weight: 700; font-size: 12px; }
+.tag-closed { color: #e74c3c; font-weight: 700; font-size: 12px; }
+.tag-limited { color: #f39c12; font-weight: 700; font-size: 12px; }
+.del-btn { background: white; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.leaflet-popup-content { min-width: auto; }
+.popup-btn { display: block; width: 100%; margin-top: 8px; padding: 6px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; text-align: center; }
+.popup-btn-update { background: #e8f5e9; border: 1px solid #27ae60; color: #1a5c2a; }
+.popup-btn-delete { background: #fee; border: 1px solid #e74c3c; color: #c0392b; }
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 9999; }
+#nickname-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2000; display: none; align-items: center; justify-content: center; }
+#nickname-box { background: #fff; border-radius: 12px; padding: 24px 20px; width: 300px; max-width: 90vw; }
+#nickname-box h2 { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: #222; }
+#nickname-box p { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.6; }
+#nickname-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px; margin-bottom: 12px; }
+#nickname-save { width: 100%; padding: 11px; background: #c0392b; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="nickname-modal">
+  <div id="nickname-box">
+    <h2>📛 はじめに</h2>
+    <p>情報の信頼性のため、ニックネームを登録してください。<br>匿名OK・本名不要です。次回から自動入力されます。</p>
+    <input type="text" id="nickname-input" placeholder="例：なごっち、A" maxlength="20">
+    <button id="nickname-save" onclick="saveNickname()">決定</button>
+  </div>
+</div>
+
+<div id="header">
+  <h1>🚨 災害時 店舗営業状況マップ</h1>
+  <div class="sub">みんなで情報を共有して、地域を助け合おう</div>
+</div>
+
+<div id="legend">
+  <div class="legend-item"><div class="dot open"></div><span>営業中</span></div>
+  <div class="legend-item"><div class="dot limited"></div><span>時短/品薄</span></div>
+  <div class="legend-item"><div class="dot closed"></div><span>閉店</span></div>
+</div>
+
+<div id="map-hint">📍 報告したい場所を地図上でタップしてください</div>
+<div id="map-wrap">
+  <div id="map"></div>
+  <button id="locate-btn" onclick="locateMe()" title="現在地へ">📍</button>
+</div>
+
+<div id="panel">
+  <h2>📍 店舗情報を報告する</h2>
+  <div class="pin-coords" id="pin-coords">タップした場所：---</div>
+  <input type="hidden" id="original-store-name" value="">
+  <div class="form-row">
+    <label>店舗名・場所</label>
+    <input type="text" id="store-name" placeholder="例：セブン-イレブン 名護為又店">
+  </div>
+  <div class="form-row">
+    <label>状況</label>
+    <div class="status-btns">
+      <button class="status-btn" id="btn-open" onclick="selectStatus('open')">🟢 営業中</button>
+      <button class="status-btn" id="btn-limited" onclick="selectStatus('limited')">🟡 時短/品薄</button>
+      <button class="status-btn" id="btn-closed" onclick="selectStatus('closed')">🔴 閉店</button>
+    </div>
+  </div>
+  <div class="form-row">
+    <label>コメント（任意）</label>
+    <input type="text" id="comment" placeholder="例：現金のみ、飲料水残りわずか">
+  </div>
+  <div class="form-row">
+    <label>ニックネーム（管理者のみ確認・一般には非公開）</label>
+    <input type="text" id="reporter-name" placeholder="例：なごっち、A" maxlength="20" readonly style="background:#f5f5f5;color:#555;">
+    <div class="admin-note">※ 一般ユーザーには表示されません。変更は<a href="#" onclick="resetNickname();return false;" style="color:#c0392b;">こちら</a></div>
+  </div>
+  <div class="btn-row">
+    <button id="cancel-btn" onclick="cancelPin()">キャンセル</button>
+    <button id="submit-btn" onclick="submitReport()">📤 送信する</button>
+  </div>
+</div>
+
+<div id="status-list">
+  <h2>最新の報告情報</h2>
+  <div id="items-container">
+    <div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">読み込み中...</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyRxwkxe-GRt1ehU2MVgF5lWPtCY0U9R-XxVed23U0OBnNgoez352H4Pxq7FBJ_yxxwag/exec';
+
+let selectedStatus = null;
+let map, markers = [], tempMarker = null;
+let tapLat = null, tapLng = null;
+let myNickname = '';
+
+// ユーザー入力をHTMLに埋め込む前のエスケープ（XSS対策）
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// statusは既知の3値のみ許可（class名等に使うため）
+function safeStatus(s) {
+  return ['open','limited','closed'].includes(s) ? s : 'closed';
+}
+
+// ── JSONP通信（タイムアウト・通信エラーを失敗として検知する）──
+function jsonpCall(params, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*100000);
+    let done = false;
+    let timer = null;
+    const finish = (ok, val) => {
+      if(done) return;
+      done = true;
+      clearTimeout(timer);
+      delete window[cbName];
+      document.getElementById('jsonp-'+cbName)?.remove();
+      ok ? resolve(val) : reject(val);
+    };
+    timer = setTimeout(() => finish(false, new Error('サーバーから応答がありません')), timeoutMs || 8000);
+    window[cbName] = result => finish(true, result);
+    const p = new URLSearchParams(params);
+    p.append('callback', cbName);
+    const script = document.createElement('script');
+    script.id = 'jsonp-'+cbName;
+    // サーバーがcallbackを呼ばない応答でも、読み込み成功＝サーバー到達とみなす
+    script.onload = () => finish(true, null);
+    script.onerror = () => finish(false, new Error('通信エラー'));
+    script.src = SHEET_URL + '?' + p.toString();
+    document.head.appendChild(script);
+  });
+}
+
+// ── ニックネーム管理 ──
+function saveNickname() {
+  const val = document.getElementById('nickname-input').value.trim();
+  if(!val) { alert('ニックネームを入力してください'); return; }
+  myNickname = val;
+  localStorage.setItem('disaster_nickname', val);
+  document.getElementById('nickname-modal').style.display = 'none';
+  document.getElementById('reporter-name').value = val;
+}
+function resetNickname() {
+  localStorage.removeItem('disaster_nickname');
+  myNickname = '';
+  document.getElementById('reporter-name').value = '';
+  document.getElementById('nickname-input').value = '';
+  document.getElementById('nickname-modal').style.display = 'flex';
+}
+
+// ── 自分の投稿管理（localStorage）──
+function saveMyPost(storeName) {
+  const posts = JSON.parse(localStorage.getItem('my_posts') || '[]');
+  if(!posts.includes(storeName)) posts.push(storeName);
+  localStorage.setItem('my_posts', JSON.stringify(posts));
+}
+function removeMyPost(storeName) {
+  const posts = JSON.parse(localStorage.getItem('my_posts') || '[]');
+  localStorage.setItem('my_posts', JSON.stringify(posts.filter(p => p !== storeName)));
+}
+function isMyPost(storeName) {
+  const posts = JSON.parse(localStorage.getItem('my_posts') || '[]');
+  return posts.includes(storeName);
+}
+
+// ── ステータス ──
+function selectStatus(s) {
+  selectedStatus = s;
+  ['open','limited','closed'].forEach(t => {
+    document.getElementById('btn-'+t).className = 'status-btn' + (t===s ? ' active-'+t : '');
+  });
+}
+function getStatusLabel(s) {
+  if(s==='open') return '<span class="tag-open">🟢 営業中</span>';
+  if(s==='limited') return '<span class="tag-limited">🟡 時短/品薄</span>';
+  return '<span class="tag-closed">🔴 閉店</span>';
+}
+function getMarkerColor(s) {
+  if(s==='open') return '#27ae60';
+  if(s==='limited') return '#f39c12';
+  return '#e74c3c';
+}
+
+// ── 日時フォーマット ──
+function formatDate(ts) {
+  if(!ts) return '';
+  if(String(ts).includes('T')) {
+    const d = new Date(ts);
+    return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  const m = String(ts).match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)/);
+  if(m) return m[1]+'年'+m[2]+'月'+m[3]+'日 '+m[4]+':'+m[5];
+  return ts;
+}
+
+// ── トースト ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// ── 現在地 ──
+function locateMe() {
+  if(!navigator.geolocation) { showToast('位置情報が使えません'); return; }
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    map.setView([lat, lng], 15, {animate: true});
+    if(window._locateMarker) map.removeLayer(window._locateMarker);
+    const icon = L.divIcon({
+      html: '<div style="width:16px;height:16px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',
+      className: '', iconAnchor:[8,8]
+    });
+    window._locateMarker = L.marker([lat, lng], {icon}).addTo(map).bindPopup('🔵 現在地').openPopup();
+  }, function() { showToast('位置情報を取得できませんでした'); });
+}
+
+// ── キャンセル ──
+function cancelPin() {
+  if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+  tapLat = null; tapLng = null;
+  selectedStatus = null;
+  ['open','limited','closed'].forEach(t => { document.getElementById('btn-'+t).className = 'status-btn'; });
+  document.getElementById('store-name').value = '';
+  document.getElementById('original-store-name').value = '';
+  document.getElementById('comment').value = '';
+  document.getElementById('panel').style.display = 'none';
+  document.getElementById('map-hint').textContent = '📍 報告したい場所を地図上でタップしてください';
+}
+
+// ── 更新フォームを開く ──
+function openUpdateForm(storeName, status, comment, lat, lng) {
+  tapLat = lat; tapLng = lng;
+  document.getElementById('store-name').value = storeName;
+  document.getElementById('original-store-name').value = storeName;
+  document.getElementById('comment').value = comment || '';
+  selectStatus(status);
+  document.getElementById('panel').style.display = 'block';
+  document.getElementById('pin-coords').textContent = '更新中：' + storeName;
+  document.getElementById('map-hint').textContent = '✏️ 下のフォームで情報を更新してください';
+  document.getElementById('panel').scrollIntoView({behavior: 'smooth'});
+  map.closePopup();
+}
+
+// ── 削除 ──
+function askNameForDelete(storeName) {
+  if(!isMyPost(storeName)) { showToast('⚠️ 自分が登録した情報のみ削除できます'); return; }
+  if(!confirm('「' + storeName + '」の情報を削除しますか？')) return;
+  deleteReport(storeName, myNickname);
+}
+async function deleteReport(storeName, reporterName) {
+  try {
+    const result = await jsonpCall({ action:'delete', storeName, reporterName });
+    if(result === 'NG_NAME') {
+      showToast('⚠️ 削除できませんでした（登録時のニックネームと一致しません）');
+      return;
+    }
+    removeMyPost(storeName);
+    showToast('🗑️ 削除しました');
+    setTimeout(loadData, 1500);
+  } catch(e) {
+    showToast('⚠️ 削除できませんでした。通信状況を確認してください');
+  }
+}
+
+// ── マーカー作成 ──
+// ポップアップはDOMで組み立て、ボタンはイベントリスナーで紐付ける
+// （文字列連結のonclickは引用符やタグの混入に弱いため使わない）
+function createMarker(d) {
+  if(!d.lat || !d.lng) return;
+  const st = safeStatus(d.status);
+  const icon = L.divIcon({
+    html: '<div style="width:16px;height:16px;border-radius:50%;background:'+getMarkerColor(st)+';border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
+    className: '', iconAnchor:[8,8], popupAnchor:[0,-10]
+  });
+  const m = L.marker([parseFloat(d.lat), parseFloat(d.lng)], {icon}).addTo(map);
+  const div = document.createElement('div');
+  div.innerHTML =
+    '<b style="font-size:13px;">'+esc(d.storeName)+'</b><br>' +
+    getStatusLabel(st)+'<br>' +
+    (d.comment ? '<span style="font-size:12px;">'+esc(d.comment)+'</span><br>' : '') +
+    '<span style="font-size:12px;color:#555;display:block;margin-top:4px;">🔄 更新：'+esc(formatDate(d.timestamp))+'</span>';
+  const upd = document.createElement('button');
+  upd.className = 'popup-btn popup-btn-update';
+  upd.textContent = '✏️ この情報を更新する';
+  upd.onclick = () => openUpdateForm(d.storeName, st, d.comment || '', d.lat, d.lng);
+  div.appendChild(upd);
+  if(isMyPost(d.storeName)) {
+    const del = document.createElement('button');
+    del.className = 'popup-btn popup-btn-delete';
+    del.textContent = '🗑️ この情報を削除する';
+    del.onclick = () => askNameForDelete(d.storeName);
+    div.appendChild(del);
+  }
+  m.bindPopup(div);
+  markers.push(m);
+}
+
+// ── リスト描画 ──
+function renderList(data) {
+  const c = document.getElementById('items-container');
+  if(!data || data.length===0) {
+    c.innerHTML = '<div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">まだ報告がありません</div>';
+    return;
+  }
+  c.innerHTML = data.map(d => {
+    const st = safeStatus(d.status);
+    return '<div class="store-item '+st+'">' +
+      '<div class="store-info">' +
+        '<div class="store-name">'+esc(d.storeName||'')+'</div>' +
+        '<div class="store-time">'+(d.comment ? esc(d.comment)+' · ' : '')+esc(formatDate(d.timestamp))+'</div>' +
+      '</div>' +
+      '<div class="store-right">' +
+        getStatusLabel(st) +
+        (isMyPost(d.storeName) ? '<button class="del-btn" data-store="'+esc(d.storeName||'')+'">削除</button>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+  c.querySelectorAll('.del-btn').forEach(b => {
+    b.addEventListener('click', () => askNameForDelete(b.dataset.store));
+  });
+}
+
+// ── データ読み込み ──
+async function loadData() {
+  try {
+    const res = await fetch(SHEET_URL);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    renderList(data);
+    markers.forEach(m => m.remove());
+    markers = [];
+    data.forEach(createMarker);
+  } catch(e) {
+    document.getElementById('items-container').innerHTML =
+      '<div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">データ取得失敗</div>';
+  }
+}
+
+// ── 送信 ──
+async function submitReport() {
+  const name = document.getElementById('store-name').value.trim();
+  const rName = document.getElementById('reporter-name').value.trim();
+  const comment = document.getElementById('comment').value.trim();
+  if(!name) { showToast('⚠️ 店舗名を入力してください'); return; }
+  if(!selectedStatus) { showToast('⚠️ 状況を選択してください'); return; }
+  if(!rName) { showToast('⚠️ ニックネームを入力してください'); return; }
+  const btn = document.getElementById('submit-btn');
+  btn.textContent = '送信中...'; btn.disabled = true;
+  try {
+    const originalName = document.getElementById('original-store-name').value.trim();
+    await jsonpCall({
+      action: 'post',
+      timestamp: new Date().toLocaleString('ja-JP'),
+      storeName: name,
+      originalStoreName: originalName || name,
+      status: selectedStatus,
+      comment: comment,
+      reporterName: rName,
+      lat: tapLat || '',
+      lng: tapLng || ''
+    });
+    // ここに来るのはサーバーに届いたことを確認できた場合のみ
+    if(originalName && originalName !== name) removeMyPost(originalName);
+    saveMyPost(name);
+    showToast('✅ 送信しました！ありがとうございます');
+    cancelPin();
+    setTimeout(loadData, 1500);
+  } catch(e) {
+    // 失敗時は入力内容を消さずに残し、再送信できるようにする
+    showToast('⚠️ 送信できませんでした。通信状況を確認して、もう一度お試しください');
+  } finally {
+    btn.textContent = '📤 送信する'; btn.disabled = false;
+  }
+}
+
+// ── 初期化 ──
+window.addEventListener('load', function() {
+  // ニックネーム確認
+  const saved = localStorage.getItem('disaster_nickname');
+  if(saved) {
+    myNickname = saved;
+    document.getElementById('reporter-name').value = saved;
+  } else {
+    document.getElementById('nickname-modal').style.display = 'flex';
+  }
+
+  // 地図初期化
+  map = L.map('map').setView([26.591, 127.977], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19
+  }).addTo(map);
+
+  // 地図タップでピン
+  map.on('click', function(e) {
+    tapLat = e.latlng.lat.toFixed(6);
+    tapLng = e.latlng.lng.toFixed(6);
+    if(tempMarker) map.removeLayer(tempMarker);
+    const icon = L.divIcon({
+      html: '<div style="width:20px;height:20px;border-radius:50%;background:#666;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div>',
+      className: '', iconAnchor:[10,10]
+    });
+    tempMarker = L.marker([tapLat, tapLng], {icon}).addTo(map);
+    document.getElementById('panel').style.display = 'block';
+    document.getElementById('pin-coords').textContent = 'タップした場所：' + tapLat + ', ' + tapLng;
+    document.getElementById('map-hint').textContent = '✏️ 下のフォームに店舗情報を入力してください';
+    document.getElementById('panel').scrollIntoView({behavior: 'smooth'});
+  });
+
+  // 現在地へ自動移動
+  if(navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(function(pos) {
+      map.setView([pos.coords.latitude, pos.coords.longitude], 15);
+      const icon = L.divIcon({
+        html: '<div style="width:16px;height:16px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',
+        className: '', iconAnchor:[8,8]
+      });
+      window._locateMarker = L.marker([pos.coords.latitude, pos.coords.longitude], {icon}).addTo(map).bindPopup('🔵 現在地');
+    }, function(){});
+  }
+
+  loadData();
+  // 2分ごとに自動更新（入力パネルを開いている間はスキップ）
+  // 災害時は状況が刻々と変わるため、開きっぱなしでも最新が見えるようにする
+  setInterval(function() {
+    if(document.getElementById('panel').style.display !== 'block') loadData();
+  }, 120000);
+});
+</script>
+</body>
+</html>

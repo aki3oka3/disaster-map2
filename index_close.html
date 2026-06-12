@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>災害時 店舗営業状況マップ</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+.card { background: white; border-radius: 16px; padding: 36px 28px; max-width: 480px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; }
+.icon { font-size: 56px; margin-bottom: 16px; }
+.status-badge { display: inline-block; background: #e8f5e9; color: #27ae60; border: 1.5px solid #81c784; border-radius: 20px; padding: 5px 16px; font-size: 13px; font-weight: 700; margin-bottom: 20px; }
+h1 { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 12px; line-height: 1.5; }
+.message { font-size: 14px; color: #666; line-height: 1.9; margin-bottom: 24px; }
+.divider { border: none; border-top: 1px solid #eee; margin: 24px 0; }
+.info-box { background: #f9f9f9; border-radius: 10px; padding: 16px; text-align: left; font-size: 13px; color: #555; line-height: 2; }
+.info-box .label { font-weight: 700; color: #333; }
+.footer { margin-top: 28px; font-size: 12px; color: #aaa; }
+</style>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-NBPZGED7Q0"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-NBPZGED7Q0');
+</script>
+</head>
+<body>
+<div class="card">
+  <div class="icon">🗺️</div>
+  <div class="status-badge">✅ 現在 運用停止中</div>
+  <h1>災害時 店舗営業状況<br>共有マップ</h1>
+  <p class="message">
+    台風が通過し、地域の状況が落ち着いたため<br>
+    現在このサービスの運用を一時停止しています。<br><br>
+    次の災害発生時に再開いたします。<br>
+    ご利用いただきありがとうございました。
+  </p>
+  <hr class="divider">
+  <div class="info-box">
+    <div><span class="label">運用停止日</span>　2026年6月2日</div>
+    <div><span class="label">次回運用</span>　災害発生時に再開予定</div>
+  </div>
+  <div class="footer">
+    災害時の情報共有を目的とした地域サービスです
+  </div>
+</div>
+</body>
+</html>
