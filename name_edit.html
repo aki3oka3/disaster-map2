@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>店舗名 手直しツール</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans','Meiryo',sans-serif; background: #f5f5f0; color: #333; padding: 16px; max-width: 820px; margin: 0 auto; }
+h1 { font-size: 17px; color: #c0392b; margin-bottom: 4px; }
+.sub { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.7; }
+.step { background: #fff; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.step h2 { font-size: 13px; color: #555; margin-bottom: 8px; }
+.filerow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+input[type=file] { font-size: 12px; }
+#search { width: 100%; padding: 9px 11px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; margin-bottom: 8px; }
+#count { font-size: 12px; color: #888; margin-bottom: 8px; }
+.store-row { display: flex; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid #f0f0f0; font-size: 13px; }
+.store-row .cat { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+.store-row .orig { flex: 1; min-width: 0; }
+.store-row .orig .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.store-row .orig .meta { font-size: 10px; color: #aaa; }
+.store-row .orig .meta .maplink { color: #2980b9; font-weight: 700; text-decoration: none; font-size: 11px; }
+.store-row .orig .meta .maplink:hover { text-decoration: underline; }
+.store-row input.fix { flex: 1.2; padding: 7px 9px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.store-row input.fix.changed { border-color: #27ae60; background: #f3fcf6; }
+#list { max-height: 460px; overflow: auto; }
+button { padding: 10px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+#dl-btn { background: #27ae60; color: #fff; }
+button:disabled { opacity: .5; cursor: default; }
+.note { font-size: 12px; color: #888; line-height: 1.7; background: #fff; border-radius: 8px; padding: 12px; margin-top: 12px; }
+.note b { color: #c0392b; }
+code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.status { font-size: 12px; color: #7a5c00; background: #fff8e1; border: 1px solid #f0c040; border-radius: 6px; padding: 7px 10px; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>✏️ 店舗名 手直しツール</h1>
+<div class="sub">
+  <code>okinawa_stores.js</code> の中で名前が違う店を直し、<b><code>name_overrides.js</code></b> として書き出します。<br>
+  このファイルはOSM IDごとの「正しい名前」リストで、<b>店舗データを取り直しても上書きされません</b>（アプリが自動で当て直します）。
+</div>
+
+<div class="step">
+  <h2>1. okinawa_stores.js を読み込む</h2>
+  <div class="filerow">
+    <input type="file" id="stores-file" accept=".js" onchange="loadStores(this.files[0])">
+    <span id="stores-status"></span>
+  </div>
+</div>
+
+<div class="step">
+  <h2>2.（任意）既存の name_overrides.js を読み込む（続きから編集）</h2>
+  <div class="filerow">
+    <input type="file" id="ov-file" accept=".js" onchange="loadOverrides(this.files[0])">
+    <span id="ov-status"></span>
+  </div>
+</div>
+
+<div class="step" id="edit-step" style="display:none;">
+  <h2>3. 名前を直す（直したい店だけ右側に正しい名前を入力）</h2>
+  <input type="text" id="search" placeholder="🔍 店名で絞り込み（例：サンエー）" oninput="renderList()">
+  <div id="count"></div>
+  <div id="list"></div>
+</div>
+
+<div class="step" id="dl-step" style="display:none;">
+  <button id="dl-btn" onclick="download()">⬇️ name_overrides.js をダウンロード</button>
+  <div class="status" id="dl-status"></div>
+</div>
+
+<div class="note">
+  <b>使い方の流れ</b><br>
+  1. <code>okinawa_stores.js</code> を読み込む（2回目以降は <code>name_overrides.js</code> も読み込めば続きから編集できます）<br>
+  2. 直したい店の右欄に正しい名前を入力（空欄＝元のまま）<br>
+  3. ダウンロードして <code>name_overrides.js</code> を <code>index_open.html</code> と同じフォルダに置く<br><br>
+  <b>消えない仕組み</b>：手直しはOSMのID（例 <code>node12345</code>）に結びつけて保存します。店舗データを取り直しても、同じ店は同じIDなので、<b>直した名前が自動で当たり続けます</b>。
+</div>
+
+<script>
+const EMOJI = { conv:'🏪', super:'🛒', drug:'💊', home:'🔨', hyaku:'🪙' };
+let stores = [];          // {id, cat, name, brand}
+let overrides = {};       // id -> 正しい名前
+
+function execGlobal_(text) {
+  // ユーザー自身のファイル（window.XXX = [...]）を安全に実行して中身を取り出す
+  const sandbox = {};
+  const fn = new Function('window', text + '\nreturn window;');
+  return fn(sandbox);
+}
+
+function loadStores(file) {
+  if(!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const w = execGlobal_(r.result);
+      const arr = w.OKINAWA_STORES;
+      if(!Array.isArray(arr)) throw new Error('OKINAWA_STORES が見つかりません');
+      stores = arr.filter(s => s && s.id);
+      document.getElementById('stores-status').textContent = '✅ ' + stores.length + '件 読み込み';
+      document.getElementById('edit-step').style.display = 'block';
+      document.getElementById('dl-step').style.display = 'block';
+      renderList();
+    } catch(e) {
+      document.getElementById('stores-status').textContent = '⚠️ ' + e.message;
+    }
+  };
+  r.readAsText(file);
+}
+
+function loadOverrides(file) {
+  if(!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const w = execGlobal_(r.result);
+      overrides = (w.NAME_OVERRIDES && typeof w.NAME_OVERRIDES === 'object') ? w.NAME_OVERRIDES : {};
+      document.getElementById('ov-status').textContent = '✅ ' + Object.keys(overrides).length + '件の手直しを読み込み';
+      renderList();
+    } catch(e) {
+      document.getElementById('ov-status').textContent = '⚠️ ' + e.message;
+    }
+  };
+  r.readAsText(file);
+}
+
+function renderList() {
+  const box = document.getElementById('list');
+  if(!box || !stores.length) return;
+  const q = (document.getElementById('search').value || '').trim().toLowerCase();
+  const list = stores.filter(s => {
+    if(!q) return true;
+    const cur = (overrides[s.id] || s.name || '').toLowerCase();
+    return cur.includes(q) || (s.brand||'').toLowerCase().includes(q);
+  });
+  document.getElementById('count').textContent =
+    list.length + '件表示中（手直し済み ' + Object.keys(overrides).length + '件）';
+  // 多すぎると重いので先頭300件まで
+  box.innerHTML = '';
+  list.slice(0, 300).forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'store-row';
+    const cur = s.name || '（名称なし）';
+    const lat = Number(s.lat), lng = Number(s.lng);
+    const mapUrl = 'https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng;
+    row.innerHTML =
+      '<div class="cat">' + (EMOJI[s.cat] || '•') + '</div>' +
+      '<div class="orig"><div class="nm">' + escapeHtml(cur) + '</div>' +
+      '<div class="meta">' +
+        '<a class="maplink" href="' + mapUrl + '" target="_blank" rel="noopener">📍 地図で確認</a>' +
+        ' · ' + lat.toFixed(5) + ', ' + lng.toFixed(5) +
+        (s.brand ? ' · ' + escapeHtml(s.brand) : '') +
+      '</div></div>';
+    const inp = document.createElement('input');
+    inp.className = 'fix';
+    inp.type = 'text';
+    inp.placeholder = '正しい名前（空欄＝そのまま）';
+    inp.value = overrides[s.id] || '';
+    if(overrides[s.id]) inp.classList.add('changed');
+    inp.oninput = () => {
+      const v = inp.value.trim();
+      if(v) { overrides[s.id] = v; inp.classList.add('changed'); }
+      else { delete overrides[s.id]; inp.classList.remove('changed'); }
+      document.getElementById('count').textContent =
+        list.length + '件表示中（手直し済み ' + Object.keys(overrides).length + '件）';
+    };
+    row.appendChild(inp);
+    box.appendChild(row);
+  });
+  if(list.length > 300) {
+    const more = document.createElement('div');
+    more.style.cssText = 'font-size:11px;color:#aaa;padding:8px;text-align:center;';
+    more.textContent = '…他 ' + (list.length - 300) + '件。検索で絞り込んでください';
+    box.appendChild(more);
+  }
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function download() {
+  const keys = Object.keys(overrides);
+  const header = '// 店舗名の手直し（' + new Date().toLocaleString('ja-JP') + ' / ' + keys.length + '件）\n'
+    + '// OSM IDごとの正しい名前。okinawa_stores.js を取り直しても上書きされません。\n';
+  const js = header + 'window.NAME_OVERRIDES = ' + JSON.stringify(overrides, null, 2) + ';\n';
+  const blob = new Blob([js], { type: 'text/javascript' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'name_overrides.js';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  document.getElementById('dl-status').textContent =
+    '✅ ' + keys.length + '件の手直しを書き出しました。index_open.html と同じフォルダに置いてください。';
+}
+</script>
+</body>
+</html>

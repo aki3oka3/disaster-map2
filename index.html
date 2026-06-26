@@ -3,20 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>災害時 店舗営業状況マップ</title>
-<style>
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
-.card { background: white; border-radius: 16px; padding: 36px 28px; max-width: 480px; width: 100%; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center; }
-.icon { font-size: 56px; margin-bottom: 16px; }
-.status-badge { display: inline-block; background: #e8f5e9; color: #27ae60; border: 1.5px solid #81c784; border-radius: 20px; padding: 5px 16px; font-size: 13px; font-weight: 700; margin-bottom: 20px; }
-h1 { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 12px; line-height: 1.5; }
-.message { font-size: 14px; color: #666; line-height: 1.9; margin-bottom: 24px; }
-.divider { border: none; border-top: 1px solid #eee; margin: 24px 0; }
-.info-box { background: #f9f9f9; border-radius: 10px; padding: 16px; text-align: left; font-size: 13px; color: #555; line-height: 2; }
-.info-box .label { font-weight: 700; color: #333; }
-.footer { margin-top: 28px; font-size: 12px; color: #aaa; }
-</style>
+<title>災害時 店舗状況マップ</title>
+<!-- Leafletは自サイト同梱版を優先（CDN障害対策）。読み込めない場合のみCDNを使う -->
+<link rel="stylesheet" href="leaflet/leaflet.css"/>
+<script src="leaflet/leaflet.js"></script>
+<script>
+if (typeof L === 'undefined') {
+  document.write('<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>');
+  document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>');
+}
+</script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-NBPZGED7Q0"></script>
 <script>
   window.dataLayer = window.dataLayer || [];
@@ -24,26 +20,1065 @@ h1 { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 12px; line-h
   gtag('js', new Date());
   gtag('config', 'G-NBPZGED7Q0');
 </script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; }
+#header { background: #c0392b; color: white; padding: 10px 16px; }
+#header h1 { font-size: 16px; font-weight: 700; }
+#header .sub { font-size: 11px; opacity: 0.85; }
+#legend { display: flex; gap: 12px; padding: 8px 16px; background: white; border-bottom: 1px solid #e0e0e0; font-size: 12px; align-items: center; }
+.legend-item { display: flex; align-items: center; gap: 5px; }
+.dot { width: 12px; height: 12px; border-radius: 50%; }
+.dot.open { background: #27ae60; }
+.dot.closed { background: #e74c3c; }
+.dot.limited { background: #f39c12; }
+#map-hint { background: #fff8e1; border-bottom: 2px solid #f0c040; padding: 12px 16px; font-size: 15px; font-weight: 700; color: #7a5c00; text-align: center; }
+#map-wrap { position: relative; }
+#map { width: 100%; height: 380px; }
+#locate-btn { position: absolute; bottom: 10px; right: 10px; z-index: 1000; width: 36px; height: 36px; background: #fff; border: 2px solid #bbb; border-radius: 8px; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(0,0,0,.2); }
+#panel { background: white; padding: 14px 16px; border-top: 3px solid #c0392b; display: none; }
+#panel h2 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: #333; }
+.pin-coords { font-size: 12px; color: #888; margin-bottom: 10px; background: #f5f5f5; padding: 6px 10px; border-radius: 6px; }
+.form-row { margin-bottom: 10px; }
+.form-row label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; font-weight: 600; }
+.form-row input { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.status-btns { display: flex; gap: 8px; }
+.status-btn { flex: 1; padding: 9px; border: 2px solid #ddd; border-radius: 8px; background: white; font-size: 13px; font-weight: 600; cursor: pointer; }
+.status-btn.active-open { background: #27ae60; color: white; border-color: #27ae60; }
+.status-btn.active-closed { background: #e74c3c; color: white; border-color: #e74c3c; }
+.status-btn.active-limited { background: #f39c12; color: white; border-color: #f39c12; }
+.admin-note { font-size: 11px; color: #888; margin-top: 4px; }
+.btn-row { display: flex; gap: 8px; margin-top: 10px; }
+#submit-btn { flex: 3; padding: 11px; background: #c0392b; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+#cancel-btn { flex: 1; padding: 11px; background: white; color: #888; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; cursor: pointer; }
+#status-list { padding: 10px 16px 16px; background: #fafafa; }
+#status-list h2 { font-size: 13px; font-weight: 700; color: #555; margin-bottom: 8px; }
+.store-item { background: white; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; border-left: 4px solid #ddd; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); gap: 8px; }
+.store-item.open { border-left-color: #27ae60; }
+.store-item.closed { border-left-color: #e74c3c; }
+.store-item.limited { border-left-color: #f39c12; }
+.store-info { flex: 1; min-width: 0; }
+.store-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.store-time { font-size: 11px; color: #999; margin-top: 2px; }
+.store-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.tag-open { color: #27ae60; font-weight: 700; font-size: 12px; }
+.tag-closed { color: #e74c3c; font-weight: 700; font-size: 12px; }
+.tag-limited { color: #f39c12; font-weight: 700; font-size: 12px; }
+.del-btn { background: white; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.upd-btn { background: white; border: 1px solid #2980b9; color: #2980b9; border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.leaflet-popup-content { min-width: auto; }
+.popup-btn { display: block; width: 100%; margin-top: 8px; padding: 6px; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; text-align: center; }
+.popup-btn-update { background: #e8f5e9; border: 1px solid #27ae60; color: #1a5c2a; }
+.popup-btn-delete { background: #fee; border: 1px solid #e74c3c; color: #c0392b; }
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; display: none; z-index: 9999; }
+#nickname-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2000; display: none; align-items: center; justify-content: center; }
+#nickname-box { background: #fff; border-radius: 12px; padding: 24px 20px; width: 300px; max-width: 90vw; }
+#nickname-box h2 { font-size: 15px; font-weight: 700; margin-bottom: 6px; color: #222; }
+#nickname-box p { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.6; }
+#nickname-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px; margin-bottom: 12px; }
+#nickname-save { width: 100%; padding: 11px; background: #c0392b; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+#cat-bar { display: flex; gap: 6px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #e0e0e0; flex-wrap: wrap; align-items: center; }
+.cat-chip { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border: 2px solid #ddd; border-radius: 16px; font-size: 12px; font-weight: 600; color: #666; cursor: pointer; background: #fff; user-select: none; -webkit-tap-highlight-color: transparent; }
+#osm-hint { font-size: 11px; color: #999; margin-left: auto; }
+#chain-admin-btn { border: 1px solid #ddd; background: #fff; border-radius: 8px; padding: 5px 9px; font-size: 14px; cursor: pointer; margin-left: 6px; }
+#chain-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2000; display: none; align-items: flex-start; justify-content: center; overflow: auto; padding: 20px 0; }
+#chain-modal .modal-box { background: #fff; border-radius: 12px; padding: 20px; width: 340px; max-width: 92vw; margin: auto; }
+#chain-modal h2 { font-size: 15px; font-weight: 700; margin-bottom: 4px; color: #222; }
+.modal-note { font-size: 11px; color: #888; margin-bottom: 12px; line-height: 1.5; }
+.form-row select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; background: #fff; }
+#chain-cancel-btn { flex: 1; padding: 11px; background: #fff; color: #888; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; cursor: pointer; }
+#chain-submit-btn { flex: 3; padding: 11px; background: #c0392b; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.chain-item { background: #f8f8f8; border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.chain-del { background: #fff; border: 1px solid #e74c3c; color: #e74c3c; border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0; }
+.chain-badge { display: inline-block; font-size: 10px; font-weight: 700; color: #fff; background: #c0392b; border-radius: 4px; padding: 1px 5px; margin-left: 4px; vertical-align: middle; }
+</style>
 </head>
 <body>
-<div class="card">
-  <div class="icon">🗺️</div>
-  <div class="status-badge">✅ 現在 運用停止中</div>
-  <h1>災害時 店舗営業状況<br>共有マップ</h1>
-  <p class="message">
-    台風が通過し、地域の状況が落ち着いたため<br>
-    現在このサービスの運用を一時停止しています。<br><br>
-    次の災害発生時に再開いたします。<br>
-    ご利用いただきありがとうございました。
-  </p>
-  <hr class="divider">
-  <div class="info-box">
-    <div><span class="label">運用停止日</span>　2026年6月2日</div>
-    <div><span class="label">次回運用</span>　災害発生時に再開予定</div>
-  </div>
-  <div class="footer">
-    災害時の情報共有を目的とした地域サービスです
+
+<div id="nickname-modal">
+  <div id="nickname-box">
+    <h2>📛 はじめに</h2>
+    <p>情報の信頼性のため、ニックネームを登録してください。<br>匿名OK・本名不要です。次回から自動入力されます。</p>
+    <input type="text" id="nickname-input" placeholder="例：なごっち、A" maxlength="20">
+    <button id="nickname-save" onclick="saveNickname()">決定</button>
   </div>
 </div>
+
+<div id="header">
+  <h1>🚨 災害時 店舗営業状況マップ</h1>
+  <div class="sub">みんなで情報を共有して、地域を助け合おう</div>
+</div>
+
+<div id="legend">
+  <div class="legend-item"><div class="dot open"></div><span>営業中</span></div>
+  <div class="legend-item"><div class="dot limited"></div><span>時短/品薄</span></div>
+  <div class="legend-item"><div class="dot closed"></div><span>閉店</span></div>
+</div>
+
+<div id="cat-bar">
+  <span class="cat-chip" data-cat="conv" onclick="toggleCat('conv',this)">🏪 コンビニ</span>
+  <span class="cat-chip" data-cat="super" onclick="toggleCat('super',this)">🛒 スーパー</span>
+  <span class="cat-chip" data-cat="drug" onclick="toggleCat('drug',this)">💊 ドラッグ/薬局</span>
+  <span class="cat-chip" data-cat="home" onclick="toggleCat('home',this)">🔨 ホームセンター</span>
+  <span class="cat-chip" data-cat="hyaku" onclick="toggleCat('hyaku',this)">🪙 100均</span>
+  <span id="osm-hint">カテゴリを選ぶと店舗が表示されます</span>
+  <button id="chain-admin-btn" onclick="openChainModal()" title="チェーン一括（管理者）">🛠</button>
+</div>
+
+<div id="map-hint">📍 報告したい場所を地図上でタップしてください</div>
+<div id="map-wrap">
+  <div id="map"></div>
+  <button id="locate-btn" onclick="locateMe()" title="現在地へ">📍</button>
+</div>
+
+<div id="panel">
+  <h2>📍 店舗情報を報告する</h2>
+  <div class="pin-coords" id="pin-coords">タップした場所：---</div>
+  <input type="hidden" id="original-store-name" value="">
+  <input type="hidden" id="osm-id" value="">
+  <div class="form-row">
+    <label>店舗名・場所</label>
+    <input type="text" id="store-name" placeholder="例：セブンイレブン">
+  </div>
+  <div class="form-row">
+    <label>カテゴリ</label>
+    <select id="report-category">
+      <option value="">その他（常に表示）</option>
+      <option value="conv">🏪 コンビニ</option>
+      <option value="super">🛒 スーパー</option>
+      <option value="drug">💊 ドラッグ/薬局</option>
+      <option value="home">🔨 ホームセンター</option>
+      <option value="hyaku">🪙 100均</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label>状況</label>
+    <div class="status-btns">
+      <button class="status-btn" id="btn-open" onclick="selectStatus('open')">🟢 営業中</button>
+      <button class="status-btn" id="btn-limited" onclick="selectStatus('limited')">🟡 時短/品薄</button>
+      <button class="status-btn" id="btn-closed" onclick="selectStatus('closed')">🔴 閉店</button>
+    </div>
+  </div>
+  <div class="form-row">
+    <label>コメント（任意）</label>
+    <input type="text" id="comment" placeholder="例：現金のみ、飲料水残りわずか">
+  </div>
+  <div class="form-row">
+    <label>ニックネーム（管理者のみ確認・一般には非公開）</label>
+    <input type="text" id="reporter-name" placeholder="例：なごっち、A" maxlength="20" readonly style="background:#f5f5f5;color:#555;">
+    <div class="admin-note">※ 一般ユーザーには表示されません。変更は<a href="#" onclick="resetNickname();return false;" style="color:#c0392b;">こちら</a></div>
+  </div>
+  <div class="btn-row">
+    <button id="cancel-btn" onclick="cancelPin()">キャンセル</button>
+    <button id="submit-btn" onclick="submitReport()">📤 送信する</button>
+  </div>
+</div>
+
+<div id="status-list">
+  <h2>最新の報告情報</h2>
+  <div id="items-container">
+    <div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">読み込み中...</div>
+  </div>
+</div>
+
+<div id="chain-modal">
+  <div class="modal-box">
+    <h2>🛠 チェーン一括ステータス</h2>
+    <p class="modal-note">サンエー等の「全店一斉の閉店／再開」を登録します（管理者用）。閉店・再開の時刻を入れておけば、地図の色が時間帯で自動的に切り替わります。</p>
+    <div class="form-row">
+      <label>ブランド名</label>
+      <input type="text" id="chain-brand" list="brand-list" placeholder="例：サンエー">
+      <datalist id="brand-list"></datalist>
+    </div>
+    <div class="form-row">
+      <label>別表記（カンマ区切り・任意）</label>
+      <input type="text" id="chain-aliases" placeholder="例：San-A,サンエー食品館">
+    </div>
+    <div class="form-row">
+      <label>方式</label>
+      <select id="chain-mode" onchange="onChainModeChange()">
+        <option value="schedule">時刻で自動（閉店→再開）</option>
+        <option value="fixed">状態を固定（時短など）</option>
+      </select>
+    </div>
+    <div id="chain-schedule-fields">
+      <div class="form-row"><label>閉店日時</label><input type="datetime-local" id="chain-close"></div>
+      <div class="form-row"><label>再開日時</label><input type="datetime-local" id="chain-open"></div>
+    </div>
+    <div id="chain-fixed-fields" style="display:none;">
+      <div class="form-row"><label>状態</label>
+        <select id="chain-status">
+          <option value="open">🟢 営業中</option>
+          <option value="limited">🟡 時短/品薄</option>
+          <option value="closed">🔴 閉店</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row"><label>告知文（任意）</label><input type="text" id="chain-message" placeholder="例：全店 25日22時閉店／26日10時開店"></div>
+    <div class="form-row"><label>情報源（任意）</label><input type="text" id="chain-source" placeholder="例：公式サイト"></div>
+    <div class="form-row"><label>管理PIN</label><input type="password" id="chain-pin" placeholder="管理者PIN"></div>
+    <div class="btn-row">
+      <button id="chain-cancel-btn" onclick="closeChainModal()">閉じる</button>
+      <button id="chain-submit-btn" onclick="submitChain()">📤 登録する</button>
+    </div>
+    <h3 style="font-size:12px;color:#555;margin:16px 0 6px;">登録中のチェーン</h3>
+    <div id="chain-list"><div style="font-size:12px;color:#aaa;">なし</div></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- OSM店舗データ（store_data_fetch.html で生成して同じフォルダに置く。無ければ店舗レイヤーは空になるだけ） -->
+<script src="okinawa_stores.js"></script>
+<!-- 店舗名の手直し（name_edit.html で生成。OSM IDごとの正しい名前。取り直しても上書きされない） -->
+<script src="name_overrides.js"></script>
+
+<script>
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyRxwkxe-GRt1ehU2MVgF5lWPtCY0U9R-XxVed23U0OBnNgoez352H4Pxq7FBJ_yxxwag/exec';
+
+let selectedStatus = null;
+let map, markers = [], tempMarker = null;
+let tapLat = null, tapLng = null;
+let myNickname = '';
+let editingId = null; // 更新中の報告ID（新規はnull）
+
+// ユーザー入力をHTMLに埋め込む前のエスケープ（XSS対策）
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+// statusは既知の3値のみ許可（class名等に使うため）
+function safeStatus(s) {
+  return ['open','limited','closed'].includes(s) ? s : 'closed';
+}
+
+// ── 端末ID（削除の本人確認用。サーバーに送るだけで画面には出さない）──
+function getDeviceId() {
+  let id = localStorage.getItem('disaster_device_id');
+  if(!id) {
+    id = 'dev_' + Date.now() + '_' + Math.floor(Math.random()*1000000000);
+    localStorage.setItem('disaster_device_id', id);
+  }
+  return id;
+}
+
+// ── GAS通信（HTTPエラー・サーバーのエラー応答を検知して例外にする）──
+async function apiCall(params) {
+  const res = await fetch(SHEET_URL + '?' + new URLSearchParams(params));
+  if(!res.ok) throw new Error('HTTP ' + res.status);
+  const result = await res.json();
+  if(result && result.status && result.status !== 'ok') {
+    throw new Error(result.message || 'サーバーエラー');
+  }
+  return result;
+}
+
+// ── ニックネーム管理 ──
+function saveNickname() {
+  const val = document.getElementById('nickname-input').value.trim();
+  if(!val) { alert('ニックネームを入力してください'); return; }
+  myNickname = val;
+  localStorage.setItem('disaster_nickname', val);
+  document.getElementById('nickname-modal').style.display = 'none';
+  document.getElementById('reporter-name').value = val;
+}
+function resetNickname() {
+  localStorage.removeItem('disaster_nickname');
+  myNickname = '';
+  document.getElementById('reporter-name').value = '';
+  document.getElementById('nickname-input').value = '';
+  document.getElementById('nickname-modal').style.display = 'flex';
+}
+
+// ── 自分の投稿管理（localStorage・報告ID単位）──
+function saveMyPost(id) {
+  if(!id) return;
+  const posts = JSON.parse(localStorage.getItem('my_post_ids') || '[]');
+  if(!posts.includes(id)) posts.push(id);
+  localStorage.setItem('my_post_ids', JSON.stringify(posts));
+}
+function removeMyPost(id) {
+  const posts = JSON.parse(localStorage.getItem('my_post_ids') || '[]');
+  localStorage.setItem('my_post_ids', JSON.stringify(posts.filter(p => p !== id)));
+}
+function isMyPost(id) {
+  if(!id) return false;
+  const posts = JSON.parse(localStorage.getItem('my_post_ids') || '[]');
+  return posts.includes(id);
+}
+
+// ── ステータス ──
+function selectStatus(s) {
+  selectedStatus = s;
+  ['open','limited','closed'].forEach(t => {
+    document.getElementById('btn-'+t).className = 'status-btn' + (t===s ? ' active-'+t : '');
+  });
+}
+function getStatusLabel(s) {
+  if(s==='open') return '<span class="tag-open">🟢 営業中</span>';
+  if(s==='limited') return '<span class="tag-limited">🟡 時短/品薄</span>';
+  return '<span class="tag-closed">🔴 閉店</span>';
+}
+function getMarkerColor(s) {
+  if(s==='open') return '#27ae60';
+  if(s==='limited') return '#f39c12';
+  return '#e74c3c';
+}
+
+// ── 日時フォーマット ──
+function formatDate(ts) {
+  if(!ts) return '';
+  if(String(ts).includes('T')) {
+    const d = new Date(ts);
+    return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日 '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  }
+  const m = String(ts).match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)/);
+  if(m) return m[1]+'年'+m[2]+'月'+m[3]+'日 '+m[4]+':'+m[5];
+  return ts;
+}
+
+// ── トースト ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 3000);
+}
+
+// ── 現在地 ──
+function locateMe() {
+  if(!navigator.geolocation) { showToast('位置情報が使えません'); return; }
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    map.setView([lat, lng], 16, {animate: true});
+    if(window._locateMarker) map.removeLayer(window._locateMarker);
+    const icon = L.divIcon({
+      html: '<div style="width:16px;height:16px;border-radius:50%;background:#4285f4;border:3px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>',
+      className: '', iconAnchor:[11,11]
+    });
+    window._locateMarker = L.marker([lat, lng], {icon}).addTo(map).bindPopup('🔵 現在地').openPopup();
+  }, function() { showToast('位置情報を取得できませんでした'); });
+}
+
+// ── キャンセル ──
+function cancelPin() {
+  if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+  tapLat = null; tapLng = null;
+  editingId = null;
+  selectedStatus = null;
+  ['open','limited','closed'].forEach(t => { document.getElementById('btn-'+t).className = 'status-btn'; });
+  document.getElementById('store-name').value = '';
+  document.getElementById('original-store-name').value = '';
+  document.getElementById('osm-id').value = '';
+  document.getElementById('comment').value = '';
+  document.getElementById('report-category').value = '';
+  document.getElementById('panel').style.display = 'none';
+  document.getElementById('map-hint').textContent = '📍 報告したい場所を地図上でタップしてください';
+}
+
+// ── 更新フォームを開く ──
+function openUpdateForm(d) {
+  editingId = d.id || null;
+  tapLat = d.lat; tapLng = d.lng;
+  const dispName = reportDisplayName(d);
+  document.getElementById('store-name').value = dispName;
+  document.getElementById('original-store-name').value = d.storeName || dispName;
+  document.getElementById('osm-id').value = d.osmId || '';
+  document.getElementById('comment').value = d.comment || '';
+  document.getElementById('report-category').value = (d.category && CAT_META[d.category]) ? d.category : '';
+  selectStatus(safeStatus(d.status));
+  document.getElementById('panel').style.display = 'block';
+  document.getElementById('pin-coords').textContent = '更新中：' + d.storeName;
+  document.getElementById('map-hint').textContent = '✏️ 下のフォームで情報を更新してください';
+  document.getElementById('panel').scrollIntoView({behavior: 'smooth'});
+  map.closePopup();
+}
+
+// ── 削除 ──
+function askNameForDelete(d) {
+  if(!isMyPost(d.id)) { showToast('⚠️ 自分が登録した情報のみ削除できます'); return; }
+  if(!confirm('「' + d.storeName + '」の情報を削除しますか？')) return;
+  deleteReport(d);
+}
+async function deleteReport(d) {
+  try {
+    await apiCall({
+      action: 'delete',
+      id: d.id || '',
+      storeName: d.storeName,
+      reporterName: myNickname,
+      deviceId: getDeviceId()
+    });
+    removeMyPost(d.id);
+    showToast('🗑️ 削除しました');
+    setTimeout(loadData, 1000);
+  } catch(e) {
+    showToast('⚠️ ' + (e.message || '削除できませんでした。通信状況を確認してください'));
+  }
+}
+
+// ── マーカー作成 ──
+// ポップアップはDOMで組み立て、ボタンはイベントリスナーで紐付ける
+// （文字列連結のonclickは引用符やタグの混入に弱いため使わない）
+// 報告ピンを表示してよいか（未分類・その他は常に表示、4カテゴリは選択中のみ）
+function reportVisible(cat) {
+  if(!cat || !CAT_META[cat]) return true;
+  return selectedCats.has(cat);
+}
+// カテゴリのON/OFFに応じて報告ピンの表示を切替（データは消さず、表示だけ）
+function applyReportFilter() {
+  markers.forEach(m => {
+    if(reportVisible(m._reportCat)) { if(!map.hasLayer(m)) m.addTo(map); }
+    else { if(map.hasLayer(m)) m.remove(); }
+  });
+}
+
+// 報告の日時を解析（"2026/6/26 10:27:30" 形式に対応）
+function parseReportDate(ts) {
+  if(!ts) return null;
+  const d = new Date(String(ts).replace(/-/g, '/'));
+  return isNaN(d.getTime()) ? null : d;
+}
+// 1週間以上前の報告は「古い情報」として隠す（データは消さず表示のみ）
+const STALE_MS = 7 * 24 * 60 * 60 * 1000;
+function isStale(ts) {
+  const d = parseReportDate(ts);
+  if(!d) return false; // 解析できなければ隠さない（安全側）
+  return (Date.now() - d.getTime()) > STALE_MS;
+}
+
+// ── 店舗名の解決（正確さの順）──
+// 1) name_overrides.js（地図で確認して手直しした名前）
+// 2) その店(osmId)への最新の報告で入力された名前
+// 3) okinawa_stores.js の素の名前
+// 4) カテゴリ名
+let reportNameByOsm = {}; // osmId -> 最新の報告店舗名（loadDataで構築）
+function resolveOsmName(s) {
+  if(window.NAME_OVERRIDES && s.id && window.NAME_OVERRIDES[s.id]) return window.NAME_OVERRIDES[s.id];
+  if(s.id && reportNameByOsm[s.id]) return reportNameByOsm[s.id];
+  return s.name || (CAT_META[s.cat] && CAT_META[s.cat].label) || '';
+}
+// 報告ピン／リストの表示名：overrides（手直し）があれば最優先、なければ報告の名前
+function reportDisplayName(d) {
+  if(d.osmId && window.NAME_OVERRIDES && window.NAME_OVERRIDES[d.osmId]) return window.NAME_OVERRIDES[d.osmId];
+  return d.storeName || '';
+}
+
+function createMarker(d) {
+  if(!d.lat || !d.lng) return;
+  if(isStale(d.timestamp)) return; // 1週間以上前は地図に出さない
+  const st = safeStatus(d.status);
+  const icon = L.divIcon({
+    html: '<div style="width:16px;height:16px;border-radius:50%;background:'+getMarkerColor(st)+';border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
+    className: '', iconAnchor:[10,10], popupAnchor:[0,-10]
+  });
+  const m = L.marker([parseFloat(d.lat), parseFloat(d.lng)], {icon});
+  m._reportCat = (d.category || '').trim(); // Sheetのカテゴリ列（無ければ空＝常に表示）
+  const div = document.createElement('div');
+  div.innerHTML =
+    '<b style="font-size:13px;">'+esc(reportDisplayName(d))+'</b><br>' +
+    getStatusLabel(st)+'<br>' +
+    (d.comment ? '<span style="font-size:12px;">'+esc(d.comment)+'</span><br>' : '') +
+    '<span style="font-size:12px;color:#555;display:block;margin-top:4px;">🔄 更新：'+esc(formatDate(d.timestamp))+'</span>';
+  const upd = document.createElement('button');
+  upd.className = 'popup-btn popup-btn-update';
+  upd.textContent = '✏️ この情報を更新する';
+  upd.onclick = () => openUpdateForm(d);
+  div.appendChild(upd);
+  if(isMyPost(d.id)) {
+    const del = document.createElement('button');
+    del.className = 'popup-btn popup-btn-delete';
+    del.textContent = '🗑️ この情報を削除する';
+    del.onclick = () => askNameForDelete(d);
+    div.appendChild(del);
+  }
+  m.bindPopup(div);
+  markers.push(m);
+  if(reportVisible(m._reportCat)) m.addTo(map);
+}
+
+// ── リスト描画（表示中の地図範囲内 ＆ 1週間以内のみ）──
+let allReports = [];
+function renderList(data) {
+  if(data) allReports = data; // 新規取得時はキャッシュを更新
+  const c = document.getElementById('items-container');
+  const bounds = map.getBounds();
+  const fresh = allReports.filter(d =>
+    !isStale(d.timestamp) &&
+    d.lat != null && d.lng != null &&
+    bounds.contains([parseFloat(d.lat), parseFloat(d.lng)])
+  );
+  if(fresh.length === 0) {
+    c.innerHTML = '<div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">この範囲に報告はありません<br><span style="font-size:11px;">地図を動かすと切り替わります</span></div>';
+    return;
+  }
+  c.innerHTML = '';
+  fresh.forEach(d => {
+    const st = safeStatus(d.status);
+    const item = document.createElement('div');
+    item.className = 'store-item ' + st;
+    item.innerHTML =
+      '<div class="store-info">' +
+        '<div class="store-name">'+esc(reportDisplayName(d))+'</div>' +
+        '<div class="store-time">'+(d.comment ? esc(d.comment)+' · ' : '')+esc(formatDate(d.timestamp))+'</div>' +
+      '</div>' +
+      '<div class="store-right">' + getStatusLabel(st) + '</div>';
+    const right = item.querySelector('.store-right');
+    // 地図でその店へ寄るボタン
+    const go = document.createElement('button');
+    go.className = 'upd-btn';
+    go.textContent = '地図';
+    go.onclick = () => { map.setView([parseFloat(d.lat), parseFloat(d.lng)], 17, {animate:true}); window.scrollTo({top:0, behavior:'smooth'}); };
+    right.appendChild(go);
+    // 更新ボタン（誰でも更新可）
+    const upd = document.createElement('button');
+    upd.className = 'upd-btn';
+    upd.textContent = '更新';
+    upd.onclick = () => { openUpdateForm(d); };
+    right.appendChild(upd);
+    if(isMyPost(d.id)) {
+      const del = document.createElement('button');
+      del.className = 'del-btn';
+      del.textContent = '削除';
+      del.onclick = () => askNameForDelete(d);
+      right.appendChild(del);
+    }
+    c.appendChild(item);
+  });
+}
+
+// ── データ読み込み ──
+async function loadData() {
+  try {
+    const res = await fetch(SHEET_URL);
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    // osmId → 最新の報告店舗名（dataは新しい順なので最初に出たものが最新）
+    reportNameByOsm = {};
+    data.forEach(d => {
+      if(d.osmId && !reportNameByOsm[d.osmId] && d.storeName) reportNameByOsm[d.osmId] = d.storeName;
+    });
+    renderList(data);
+    markers.forEach(m => m.remove());
+    markers = [];
+    data.forEach(createMarker);
+    renderOsmStores(); // 報告名を店舗リングに反映
+  } catch(e) {
+    document.getElementById('items-container').innerHTML =
+      '<div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">データ取得失敗</div>';
+  }
+}
+
+// ── 送信 ──
+async function submitReport() {
+  const name = document.getElementById('store-name').value.trim();
+  const rName = document.getElementById('reporter-name').value.trim();
+  const comment = document.getElementById('comment').value.trim();
+  if(!name) { showToast('⚠️ 店舗名を入力してください'); return; }
+  if(!selectedStatus) { showToast('⚠️ 状況を選択してください'); return; }
+  if(!rName) { showToast('⚠️ ニックネームを入力してください'); return; }
+  const btn = document.getElementById('submit-btn');
+  btn.textContent = '送信中...'; btn.disabled = true;
+  try {
+    const originalName = document.getElementById('original-store-name').value.trim();
+    const osmId = document.getElementById('osm-id').value.trim();
+    // ID方針：更新=既存ID／OSM店舗の新規=空（GASがosmIdで既存を探し更新or発行）／空き地の新規=新ID
+    let id;
+    if(editingId) id = editingId;
+    else if(osmId) id = '';
+    else id = 'store_' + Date.now() + '_' + Math.floor(Math.random()*10000);
+    const result = await apiCall({
+      action: 'post',
+      id: id,
+      osmId: osmId,
+      timestamp: new Date().toLocaleString('ja-JP'),
+      storeName: name,
+      originalStoreName: originalName || name,
+      status: selectedStatus,
+      comment: comment,
+      category: document.getElementById('report-category').value,
+      reporterName: rName,
+      deviceId: getDeviceId(),
+      lat: tapLat || '',
+      lng: tapLng || ''
+    });
+    // ここに来るのはサーバーに保存できたことを確認できた場合のみ
+    saveMyPost((result && result.id) ? result.id : id);
+    showToast('✅ 送信しました！ありがとうございます');
+    cancelPin();
+    setTimeout(loadData, 1000);
+  } catch(e) {
+    // 失敗時は入力内容を消さずに残し、再送信できるようにする
+    showToast('⚠️ ' + (e.message || '送信できませんでした。通信状況を確認して、もう一度お試しください'));
+  } finally {
+    btn.textContent = '📤 送信する'; btn.disabled = false;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  OSM店舗レイヤー（B案：表示範囲だけ動的取得＋4カテゴリ切替）
+//  ・報告ピン（GAS）とは別レイヤー。報告ピンより下のpaneに薄く表示。
+//  ・チェーンの brand も保持 → 将来の「チェーン一括ステータス」用の地ならし。
+// ════════════════════════════════════════════════════════════
+const OSM_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter'
+];
+const OSM_MIN_ZOOM = 12; // これ未満のズームでは取得しない（広域での過負荷防止）
+const CAT_META = {
+  conv:  { label:'コンビニ',       emoji:'🏪', color:'#8e44ad' },
+  super: { label:'スーパー',        emoji:'🛒', color:'#2980b9' },
+  drug:  { label:'ドラッグ/薬局',   emoji:'💊', color:'#00897b' },
+  home:  { label:'ホームセンター',  emoji:'🔨', color:'#e91e63' },
+  hyaku: { label:'100均',          emoji:'🪙', color:'#fb8c00' }
+};
+let osmLayer = null;
+let osmStores = {};             // id -> {id,cat,lat,lng,name,brand}（取得済みを蓄積）
+let selectedCats = new Set();   // 表示中カテゴリ
+let osmFetchedKeys = new Set(); // 取得済みエリア（重複取得の抑制）
+let osmAbort = null;
+let osmTimer = null;
+let osmFetchedCount = 0; // 直近の取得で返ってきた生の要素数（診断用）
+
+function osmCategorize(t) {
+  if(!t) return null;
+  if(t.shop==='convenience') return 'conv';
+  if(t.shop==='supermarket') return 'super';
+  if(t.shop==='chemist'||t.shop==='pharmacy'||t.amenity==='pharmacy'||t.healthcare==='pharmacy') return 'drug';
+  if(t.shop==='doityourself'||t.shop==='hardware'||t.shop==='trade') return 'home';
+  return null;
+}
+
+function osmSetHint(msg) {
+  const el = document.getElementById('osm-hint');
+  if(el) el.textContent = msg;
+}
+
+// カテゴリチップのON/OFF
+function toggleCat(cat, el) {
+  if(selectedCats.has(cat)) {
+    selectedCats.delete(cat);
+    el.style.background='#fff'; el.style.borderColor='#ddd'; el.style.color='#666';
+  } else {
+    selectedCats.add(cat);
+    el.style.background=CAT_META[cat].color; el.style.borderColor=CAT_META[cat].color; el.style.color='#fff';
+  }
+  fetchOsmStores();
+  applyReportFilter();
+}
+
+function osmBboxQuery(b) {
+  const bb = '('+b.getSouth().toFixed(5)+','+b.getWest().toFixed(5)+','+b.getNorth().toFixed(5)+','+b.getEast().toFixed(5)+')';
+  return '[out:json][timeout:60];('
+    + 'nwr["shop"="convenience"]'+bb+';'
+    + 'nwr["shop"="supermarket"]'+bb+';'
+    + 'nwr["shop"="chemist"]'+bb+';'
+    + 'nwr["shop"="pharmacy"]'+bb+';'
+    + 'nwr["amenity"="pharmacy"]'+bb+';'
+    + 'nwr["healthcare"="pharmacy"]'+bb+';'
+    + 'nwr["shop"="doityourself"]'+bb+';'
+    + 'nwr["shop"="hardware"]'+bb+';'
+    + 'nwr["shop"="trade"]'+bb+';'
+    + ');out center tags;';
+}
+
+// Overpassへ問い合わせ（複数ミラーを順に試す。各12秒で打ち切り→次へ）
+async function osmFetch(query, signal) {
+  let lastErr;
+  for(const url of OSM_ENDPOINTS) {
+    if(signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
+    const ctrl = new AbortController();
+    const onAbort = () => ctrl.abort();
+    if(signal) signal.addEventListener('abort', onAbort);
+    const timer = setTimeout(() => ctrl.abort(), 12000); // 12秒応答なし→このミラーを諦める
+    try {
+      const res = await fetch(url, {
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'data='+encodeURIComponent(query),
+        signal: ctrl.signal
+      });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      return await res.json();
+    } catch(e) {
+      // 上位（新しい取得）からの中断なら全体を中断
+      if(signal && signal.aborted) throw new DOMException('aborted', 'AbortError');
+      lastErr = e; // タイムアウト/エラー → 次のミラーへ
+    } finally {
+      clearTimeout(timer);
+      if(signal) signal.removeEventListener('abort', onAbort);
+    }
+  }
+  throw lastErr || new Error('overpass failed');
+}
+
+// 店舗データを同梱JS（window.OKINAWA_STORES）から読み込み、表示範囲だけ描画。
+// Overpassはアプリ実行中には一切叩かない（事前に store_data_fetch.html で取得済み）。
+let osmLoaded = false;
+function fetchOsmStores() {
+  if(selectedCats.size===0) { if(osmLayer) osmLayer.clearLayers(); osmSetHint('カテゴリを選ぶと店舗が表示されます'); return; }
+  if(map.getZoom() < OSM_MIN_ZOOM) { if(osmLayer) osmLayer.clearLayers(); osmSetHint('🔍 地図を拡大すると店舗が表示されます'); return; }
+
+  // 初回だけ同梱データを osmStores に展開
+  if(!osmLoaded) {
+    const data = window.OKINAWA_STORES;
+    if(!Array.isArray(data) || data.length===0) {
+      if(osmLayer) osmLayer.clearLayers();
+      osmSetHint('店舗データ未配置（okinawa_stores.js を同じフォルダに置いてください）');
+      return;
+    }
+    data.forEach(s => {
+      if(s && s.cat && s.lat!=null && s.lng!=null) {
+        osmStores[s.id || (s.cat + '_' + s.lat + '_' + s.lng)] = {
+          id: s.id, cat: s.cat, lat: s.lat, lng: s.lng,
+          name: (s.name || ''),   // 素のOSM名（解決は resolveOsmName で）
+          brand: (s.brand || '')
+        };
+      }
+    });
+    osmLoaded = true;
+    console.log('[OSM] 同梱データ読込:', Object.keys(osmStores).length, '件');
+  }
+  renderOsmStores();
+}
+
+// 蓄積済みの店舗から、選択カテゴリ×表示範囲のものだけ描画
+function renderOsmStores() {
+  if(!osmLayer) return;
+  osmLayer.clearLayers();
+  if(selectedCats.size===0 || map.getZoom() < OSM_MIN_ZOOM) return;
+  const b = map.getBounds().pad(0.1);
+  let n = 0;
+  Object.values(osmStores).forEach(s => {
+    if(!selectedCats.has(s.cat)) return;
+    if(!b.contains([s.lat, s.lng])) return;
+    const color = CAT_META[s.cat].color;
+    const chain = getChainForStore(s); // チェーン一括が効いていれば状態を返す
+    const iconHtml = chain
+      ? '<div style="width:14px;height:14px;border-radius:50%;background:'+getMarkerColor(chain.status)+';border:3px solid '+color+';box-shadow:0 2px 5px rgba(0,0,0,.45);"></div>'
+      : '<div style="width:14px;height:14px;border-radius:50%;background:#fff;border:3px solid '+color+';box-shadow:0 2px 5px rgba(0,0,0,.4);"></div>';
+    const icon = L.divIcon({ html: iconHtml, className:'', iconAnchor:[10,10], popupAnchor:[0,-10] });
+    const m = L.marker([s.lat, s.lng], { icon, pane:'osmPane' });
+    const div = document.createElement('div');
+    div.innerHTML = '<b style="font-size:13px;">'+esc(resolveOsmName(s))+'</b><br>'
+      + '<span style="font-size:11px;color:#777;">'+CAT_META[s.cat].emoji+' '+CAT_META[s.cat].label
+      + (s.brand ? '・'+esc(s.brand) : '') + '</span>'
+      + (chain ? '<div style="margin-top:6px;font-size:12px;">'+getStatusLabel(chain.status)
+          + '<span class="chain-badge">チェーン一括</span>'
+          + (chain.message ? '<br><span style="color:#555;">'+esc(chain.message)+'</span>' : '') + '</div>' : '');
+    const btn = document.createElement('button');
+    btn.className = 'popup-btn popup-btn-update';
+    btn.textContent = '📤 この店の状況を報告する';
+    btn.onclick = () => reportOsmStore(s);
+    div.appendChild(btn);
+    m.bindPopup(div);
+    osmLayer.addLayer(m);
+    n++;
+  });
+  const loaded = Object.keys(osmStores).length;
+  osmSetHint(n ? (n + '件の店舗を表示中')
+    : (loaded ? 'この範囲に店舗なし' : '店舗データ未配置（okinawa_stores.js）'));
+}
+
+// OSM店舗から報告フォームを開く（店名・座標を自動入力）
+function reportOsmStore(s) {
+  editingId = null;
+  selectedStatus = null;
+  ['open','limited','closed'].forEach(t => { document.getElementById('btn-'+t).className='status-btn'; });
+  tapLat = Number(s.lat).toFixed(6);
+  tapLng = Number(s.lng).toFixed(6);
+  if(tempMarker) map.removeLayer(tempMarker);
+  const icon = L.divIcon({
+    html: '<div style="width:20px;height:20px;border-radius:50%;background:#666;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div>',
+    className:'', iconAnchor:[10,10]
+  });
+  tempMarker = L.marker([tapLat, tapLng], {icon}).addTo(map);
+  const resolved = resolveOsmName(s);
+  document.getElementById('store-name').value = resolved;
+  document.getElementById('original-store-name').value = resolved;
+  document.getElementById('osm-id').value = s.id || '';
+  document.getElementById('report-category').value = (s.cat && CAT_META[s.cat]) ? s.cat : '';
+  document.getElementById('comment').value = '';
+  document.getElementById('panel').style.display = 'block';
+  document.getElementById('pin-coords').textContent = 'タップした場所：' + tapLat + ', ' + tapLng;
+  document.getElementById('map-hint').textContent = '✏️ 状況を選んで報告してください';
+  document.getElementById('panel').scrollIntoView({behavior:'smooth'});
+  map.closePopup();
+}
+
+// ════════════════════════════════════════════════════════════
+//  チェーン一括ステータス（サンエー型：全店一斉の閉店/再開）
+//  ・新シート ChainStatus（GAS側）から取得。未対応でも[]として安全に動く。
+//  ・closeAt/openAt があれば、現在時刻から状態を自動算出（営業→休業→再開）。
+//  ・OSM店舗の brand と突合し、該当店のリングを状態色で塗る。
+// ════════════════════════════════════════════════════════════
+let chainStatus = [];
+
+// ブランド名の正規化（記号・空白差を無視して突合）
+function normBrand(s) {
+  return String(s||'').toLowerCase().replace(/[\s\-・,，]/g, '');
+}
+
+// 沖縄に多い主なチェーン。OSMに name しか無い店舗から候補を拾うために使う。
+const KNOWN_BRANDS = [
+  'サンエー','かねひで','タウンプラザかねひで','イオン','マックスバリュ','ユニオン','りうぼう','丸大',
+  'ファミリーマート','ローソン','セブン-イレブン','ココストア','ホットスパー',
+  'ダイコクドラッグ','マツモトキヨシ','サンドラッグ','ココカラファイン','くすりの福太郎','大屋薬局',
+  'メイクマン','カインズ','コーナン','ホームセンターさくもと'
+];
+
+// 店舗から「チェーン候補名」を推定（brand＋既知ブランドのname前方一致）
+function storeBrandCandidates(s) {
+  const out = new Set();
+  if(s.brand) out.add(s.brand);
+  const nb = normBrand(s.name);
+  KNOWN_BRANDS.forEach(b => { if(nb && nb.startsWith(normBrand(b))) out.add(b); });
+  return out;
+}
+
+// チェーン情報の読み込み（失敗・未対応時も従来通り動くよう握りつぶす）
+async function loadChains() {
+  try {
+    const res = await fetch(SHEET_URL + '?action=chains');
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    // brand を持つレコードのみ採用（GAS未対応で報告配列が返っても誤認しない）
+    chainStatus = (Array.isArray(data) ? data : []).filter(r => r && r.brand && (r.closeAt || r.openAt || r.status));
+  } catch(e) {
+    chainStatus = [];
+  }
+  renderOsmStores();
+  renderChainList();
+}
+
+// 現在時刻から実効状態を算出
+function chainEffectiveStatus(rec) {
+  if(rec.mode === 'fixed') return { status: rec.status || 'open', message: rec.message };
+  const now = new Date();
+  const close = rec.closeAt ? new Date(rec.closeAt) : null;
+  const open  = rec.openAt  ? new Date(rec.openAt)  : null;
+  if(close && open) {
+    if(now >= close && now < open) return { status:'closed', message: rec.message };
+    return { status:'open', message: rec.message };
+  }
+  if(open)  return { status:(now < open  ? 'closed' : 'open'), message: rec.message };
+  if(close) return { status:(now >= close ? 'closed' : 'open'), message: rec.message };
+  return { status:'open', message: rec.message };
+}
+
+// OSM店舗に効くチェーンを探す（なければnull）
+// brand が無く name しか無い店舗（サンエー為又店 等）も name 前方一致で拾う
+function getChainForStore(s) {
+  if(!chainStatus.length) return null;
+  const brandKey = s.brand ? normBrand(s.brand) : '';
+  const nameKey = normBrand(s.name);
+  for(const rec of chainStatus) {
+    const keys = [rec.brand].concat(String(rec.aliases||'').split(',')).map(normBrand).filter(Boolean);
+    for(const key of keys) {
+      if((brandKey && brandKey === key) || (nameKey && nameKey.startsWith(key))) {
+        const eff = chainEffectiveStatus(rec);
+        return { status: safeStatus(eff.status), message: eff.message || '', brand: rec.brand };
+      }
+    }
+  }
+  return null;
+}
+
+// ── 管理モーダル ──
+function openChainModal() {
+  populateBrandList();
+  renderChainList();
+  document.getElementById('chain-modal').style.display = 'flex';
+}
+function closeChainModal() {
+  document.getElementById('chain-modal').style.display = 'none';
+}
+function onChainModeChange() {
+  const m = document.getElementById('chain-mode').value;
+  document.getElementById('chain-schedule-fields').style.display = (m==='schedule') ? 'block' : 'none';
+  document.getElementById('chain-fixed-fields').style.display = (m==='fixed') ? 'block' : 'none';
+}
+// 入力候補：いま地図に表示されている範囲の店舗から推定したブランドのみ
+function populateBrandList() {
+  const dl = document.getElementById('brand-list');
+  if(!dl) return;
+  const set = new Set();
+  const inView = map.getBounds().pad(0.1);
+  Object.values(osmStores).forEach(s => {
+    if(!inView.contains([s.lat, s.lng])) return;
+    storeBrandCandidates(s).forEach(b => set.add(b));
+  });
+  const arr = Array.from(set).sort();
+  dl.innerHTML = arr.map(b => '<option value="'+esc(b)+'">').join('');
+}
+// 登録中チェーンの一覧
+function renderChainList() {
+  const box = document.getElementById('chain-list');
+  if(!box) return;
+  if(!chainStatus.length) { box.innerHTML = '<div style="font-size:12px;color:#aaa;">なし</div>'; return; }
+  box.innerHTML = '';
+  chainStatus.forEach(rec => {
+    const eff = chainEffectiveStatus(rec);
+    const item = document.createElement('div');
+    item.className = 'chain-item';
+    item.innerHTML = '<span><b>'+esc(rec.brand)+'</b> '+getStatusLabel(safeStatus(eff.status))
+      + (rec.message ? '<br><span style="color:#999;">'+esc(rec.message)+'</span>' : '') + '</span>';
+    const del = document.createElement('button');
+    del.className = 'chain-del';
+    del.textContent = '削除';
+    del.onclick = () => deleteChain(rec);
+    item.appendChild(del);
+    box.appendChild(item);
+  });
+}
+// 登録・更新
+async function submitChain() {
+  const brand = document.getElementById('chain-brand').value.trim();
+  const mode = document.getElementById('chain-mode').value;
+  const pin = document.getElementById('chain-pin').value.trim();
+  if(!brand) { showToast('⚠️ ブランド名を入力してください'); return; }
+  if(!pin) { showToast('⚠️ 管理PINを入力してください'); return; }
+  const btn = document.getElementById('chain-submit-btn');
+  btn.disabled = true; btn.textContent = '登録中...';
+  try {
+    await apiCall({
+      action: 'postChain',
+      id: 'chain_' + normBrand(brand),  // 同じブランドは上書き更新（重複登録を防ぐ）
+      brand: brand,
+      aliases: document.getElementById('chain-aliases').value.trim(),
+      area: '全域',
+      mode: mode,
+      status: document.getElementById('chain-status').value,
+      closeAt: (mode==='schedule') ? document.getElementById('chain-close').value : '',
+      openAt:  (mode==='schedule') ? document.getElementById('chain-open').value  : '',
+      message: document.getElementById('chain-message').value.trim(),
+      source: document.getElementById('chain-source').value.trim(),
+      updatedBy: myNickname || '管理者',
+      deviceId: getDeviceId(),
+      pin: pin
+    });
+    showToast('✅ チェーン情報を登録しました');
+    document.getElementById('chain-pin').value = '';
+    await loadChains();
+    closeChainModal();  // 登録後はモーダルを閉じる
+  } catch(e) {
+    showToast('⚠️ ' + (e.message || '登録に失敗しました'));
+  } finally {
+    btn.disabled = false; btn.textContent = '📤 登録する';
+  }
+}
+// 削除（PINを都度確認）
+async function deleteChain(rec) {
+  const pin = prompt('削除には管理PINを入力してください');
+  if(!pin) return;
+  try {
+    await apiCall({ action:'deleteChain', id: rec.id, pin: pin });
+    showToast('🗑️ 削除しました');
+    await loadChains();
+  } catch(e) {
+    showToast('⚠️ ' + (e.message || '削除に失敗しました'));
+  }
+}
+
+// ── 初期化 ──
+window.addEventListener('load', function() {
+  // ニックネーム確認
+  const saved = localStorage.getItem('disaster_nickname');
+  if(saved) {
+    myNickname = saved;
+    document.getElementById('reporter-name').value = saved;
+  } else {
+    document.getElementById('nickname-modal').style.display = 'flex';
+  }
+
+  // 地図初期化
+  map = L.map('map').setView([26.591, 127.977], 15);
+
+  // ── 背景地図（タイル）──
+  const gsiAttr = "<a href='https://maps.gsi.go.jp/development/ichiran.html' target='_blank'>地理院タイル</a>";
+  const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { attribution: gsiAttr + '（写真）', maxZoom: 18 });
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
+
+  // Carto：OSMベースのモダンな見た目。カード不要で商用も可。VoyagerはGoogleに近い色味。
+  const cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    { attribution: '© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom: 20 });
+  const cartoLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    { attribution: '© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom: 20 });
+
+  // 初期表示は航空写真
+  gsiPhoto.addTo(map);
+
+  // 右上の切替コントロール（タップで地図の種類を変更）
+  L.control.layers({
+    '航空写真': gsiPhoto,
+    'Carto Voyager': cartoVoyager,
+    'Carto 淡色': cartoLight,
+    'OpenStreetMap': osm
+  }, null, { position: 'topright', collapsed: true }).addTo(map);
+
+  // ── OSM店舗レイヤー（報告ピンより下のpaneに描画）──
+  map.createPane('osmPane');
+  map.getPane('osmPane').style.zIndex = 400; // 既定のmarkerPane(600)より下＝報告ピンが前面
+  osmLayer = L.layerGroup().addTo(map);
+  // 地図移動が落ち着いたら取得（デバウンス600ms）
+  map.on('moveend', function() {
+    renderList();             // 表示範囲のリストに即更新
+    clearTimeout(osmTimer);
+    osmTimer = setTimeout(fetchOsmStores, 600);
+  });
+
+  // 起動時は4カテゴリすべてON（チップを点灯させて初期取得）
+  document.querySelectorAll('.cat-chip').forEach(function(el) {
+    const cat = el.getAttribute('data-cat');
+    if(!CAT_META[cat]) return;
+    selectedCats.add(cat);
+    el.style.background = CAT_META[cat].color;
+    el.style.borderColor = CAT_META[cat].color;
+    el.style.color = '#fff';
+  });
+  // 地図の大きさが確定してから取得（直後だと範囲がほぼ点になり0件になるため）
+  map.invalidateSize();
+  setTimeout(fetchOsmStores, 700);
+
+  // 地図タップでピン
+  map.on('click', function(e) {
+    tapLat = e.latlng.lat.toFixed(6);
+    tapLng = e.latlng.lng.toFixed(6);
+    // 新規（空き地）報告なので、前回のOSM店舗報告・更新の状態をリセット
+    editingId = null;
+    document.getElementById('osm-id').value = '';
+    document.getElementById('store-name').value = '';
+    document.getElementById('original-store-name').value = '';
+    document.getElementById('report-category').value = '';
+    selectedStatus = null;
+    ['open','limited','closed'].forEach(t => { document.getElementById('btn-'+t).className = 'status-btn'; });
+    if(tempMarker) map.removeLayer(tempMarker);
+    const icon = L.divIcon({
+      html: '<div style="width:20px;height:20px;border-radius:50%;background:#666;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.5);"></div>',
+      className: '', iconAnchor:[10,10]
+    });
+    tempMarker = L.marker([tapLat, tapLng], {icon}).addTo(map);
+    document.getElementById('panel').style.display = 'block';
+    document.getElementById('pin-coords').textContent = 'タップした場所：' + tapLat + ', ' + tapLng;
+    document.getElementById('map-hint').textContent = '✏️ 下のフォームに店舗情報を入力してください';
+    document.getElementById('panel').scrollIntoView({behavior: 'smooth'});
+  });
+
+  // 起動時に「現在地」ボタンを押したのと同じ状態にする（現在地周辺を表示）
+  locateMe();
+
+  loadData();
+  loadChains();
+  // 2分ごとに自動更新（入力パネルを開いている間はスキップ）
+  // 災害時は状況が刻々と変わるため、開きっぱなしでも最新が見えるようにする
+  setInterval(function() {
+    if(document.getElementById('panel').style.display !== 'block') { loadData(); loadChains(); }
+  }, 120000);
+  // チェーン一括は時刻で状態が変わるので、1分ごとに色だけ更新（再開時刻の自動反映）
+  setInterval(function() { renderOsmStores(); }, 60000);
+});
+</script>
 </body>
 </html>
