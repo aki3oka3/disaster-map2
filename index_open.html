@@ -998,8 +998,10 @@ window.addEventListener('load', function() {
 
   // ── 背景地図（タイル）──
   const gsiAttr = "<a href='https://maps.gsi.go.jp/development/ichiran.html' target='_blank'>地理院タイル</a>";
-  const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { attribution: gsiAttr + '（写真）', maxZoom: 18 });
-  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
+  const gsiPhoto = L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', { attribution: gsiAttr + '（写真）', maxNativeZoom: 18, maxZoom: 20 });
+  const satLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', { attribution: '© CARTO', subdomains:'abcd', maxZoom: 20 });
+  const photoLabeled = L.layerGroup([gsiPhoto, satLabels]);
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxNativeZoom: 19, maxZoom: 20 });
 
   // Carto：OSMベースのモダンな見た目。カード不要で商用も可。VoyagerはGoogleに近い色味。
   const cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
@@ -1007,12 +1009,12 @@ window.addEventListener('load', function() {
   const cartoLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     { attribution: '© OpenStreetMap © CARTO', subdomains:'abcd', maxZoom: 20 });
 
-  // 初期表示は航空写真
-  gsiPhoto.addTo(map);
+  // 初期表示は航空写真＋地名
+  photoLabeled.addTo(map);
 
   // 右上の切替コントロール（タップで地図の種類を変更）
   L.control.layers({
-    '航空写真': gsiPhoto,
+    '航空写真＋地名': photoLabeled,
     'Carto Voyager': cartoVoyager,
     'Carto 淡色': cartoLight,
     'OpenStreetMap': osm
