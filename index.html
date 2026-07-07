@@ -440,8 +440,8 @@ function parseReportDate(ts) {
   const d = new Date(String(ts).replace(/-/g, '/'));
   return isNaN(d.getTime()) ? null : d;
 }
-// 1週間以上前の報告は「古い情報」として隠す（データは消さず表示のみ）
-const STALE_MS = 7 * 24 * 60 * 60 * 1000;
+// 3日以上前の報告は「古い情報」として隠す（データは消さず表示のみ）
+const STALE_MS = 3 * 24 * 60 * 60 * 1000;
 function isStale(ts) {
   const d = parseReportDate(ts);
   if(!d) return false; // 解析できなければ隠さない（安全側）
@@ -467,7 +467,7 @@ function reportDisplayName(d) {
 
 function createMarker(d) {
   if(!d.lat || !d.lng) return;
-  if(isStale(d.timestamp)) return; // 1週間以上前は地図に出さない
+  if(isStale(d.timestamp)) return; // 3日以上前は地図に出さない
   const st = safeStatus(d.status);
   const icon = L.divIcon({
     html: '<div style="width:16px;height:16px;border-radius:50%;background:'+getMarkerColor(st)+';border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>',
