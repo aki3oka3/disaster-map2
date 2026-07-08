@@ -77,6 +77,19 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
 #nickname-box p { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.6; }
 #nickname-input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 15px; margin-bottom: 12px; }
 #nickname-save { width: 100%; padding: 11px; background: #c0392b; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+/* 使い方ガイド */
+#header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+#help-btn { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.7); background: transparent; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; line-height: 1; }
+#help-btn:active { background: rgba(255,255,255,.2); }
+#guide-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 2100; display: none; align-items: center; justify-content: center; }
+#guide-box { background: #fff; border-radius: 14px; padding: 20px 18px; width: 340px; max-width: 92vw; max-height: 82vh; overflow-y: auto; }
+#guide-box h2 { font-size: 16px; font-weight: 700; margin-bottom: 4px; color: #c0392b; }
+#guide-box .g-sub { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.6; }
+.g-step { display: flex; gap: 10px; margin-bottom: 12px; align-items: flex-start; }
+.g-step .g-icon { flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px; background: #fde8e8; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+.g-step .g-text { font-size: 13px; line-height: 1.65; color: #333; }
+.g-step .g-text b { color: #8a1f14; }
+#guide-close { width: 100%; padding: 11px; margin-top: 6px; background: #c0392b; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
 #cat-bar { display: flex; gap: 6px; padding: 8px 16px; background: #fff; border-bottom: 1px solid #e0e0e0; flex-wrap: wrap; align-items: center; }
 .cat-chip { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border: 2px solid #ddd; border-radius: 16px; font-size: 12px; font-weight: 600; color: #666; cursor: pointer; background: #fff; user-select: none; -webkit-tap-highlight-color: transparent; }
 #osm-hint { font-size: 11px; color: #999; margin-left: auto; }
@@ -97,6 +110,34 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
 </head>
 <body>
 
+<div id="guide-modal">
+  <div id="guide-box">
+    <h2>🚨 営業状況マップ の使い方</h2>
+    <div class="g-sub">台風や停電のとき、「どのお店が開いているか」をみんなで共有するアプリです。</div>
+    <div class="g-step">
+      <div class="g-icon">👀</div>
+      <div class="g-text"><b>見る</b><br>ピンの色が営業状況です。<span style="color:#1a7a35;font-weight:700">緑=営業中</span>、<span style="color:#996600;font-weight:700">黄=時短/品薄</span>、<span style="color:#c0392b;font-weight:700">赤=閉店</span>。上のボタンでコンビニ・スーパーなどの絞り込みもできます。</div>
+    </div>
+    <div class="g-step">
+      <div class="g-icon">✏️</div>
+      <div class="g-text"><b>報告する（かんたん3ステップ）</b><br>① 報告したいお店を地図でタップ<br>② お店の種類と営業状況を選ぶ<br>③ 「報告する」を押す<br>あなたのひと報告が、近くの誰かの助けになります。</div>
+    </div>
+    <div class="g-step">
+      <div class="g-icon">🔄</div>
+      <div class="g-text"><b>更新・削除</b><br>状況が変わったら同じお店にもう一度報告すればOK。自分の報告は後から削除もできます。</div>
+    </div>
+    <div class="g-step">
+      <div class="g-icon">📍</div>
+      <div class="g-text"><b>現在地</b><br>地図右下の📍ボタンで現在地に移動します。青い丸●が今いる場所です。</div>
+    </div>
+    <div class="g-step">
+      <div class="g-icon">😊</div>
+      <div class="g-text"><b>安心して使ってね</b><br>登録不要・無料。ニックネームひとつでOK、本名不要です。ニックネームは管理者のみ確認でき、一般には公開されません。</div>
+    </div>
+    <button id="guide-close" onclick="closeGuide()">はじめる</button>
+  </div>
+</div>
+
 <div id="nickname-modal">
   <div id="nickname-box">
     <h2>📛 はじめに</h2>
@@ -107,8 +148,11 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
 </div>
 
 <div id="header">
-  <h1>🚨 災害時 店舗営業状況マップ</h1>
-  <div class="sub">みんなで情報を共有して、地域を助け合おう</div>
+  <div>
+    <h1>🚨 災害時 店舗営業状況マップ</h1>
+    <div class="sub">みんなで情報を共有して、地域を助け合おう</div>
+  </div>
+  <button id="help-btn" onclick="showGuide()" title="使い方">？</button>
 </div>
 
 <div id="legend">
@@ -985,13 +1029,24 @@ async function deleteChain(rec) {
 }
 
 // ── 初期化 ──
+function showGuide(){document.getElementById('guide-modal').style.display='flex';}
+function closeGuide(){
+  document.getElementById('guide-modal').style.display='none';
+  try{localStorage.setItem('disaster_guide_seen','1');}catch(e){}
+  if(!myNickname)document.getElementById('nickname-modal').style.display='flex';
+}
 window.addEventListener('load', function() {
-  // ニックネーム確認
+  // ニックネーム確認（初回はガイド→はじめる→ニックネームの順）
   const saved = localStorage.getItem('disaster_nickname');
   if(saved) {
     myNickname = saved;
     document.getElementById('reporter-name').value = saved;
-  } else {
+  }
+  let guideSeen='';
+  try{guideSeen=localStorage.getItem('disaster_guide_seen');}catch(e){}
+  if(!guideSeen){
+    showGuide();
+  } else if(!saved) {
     document.getElementById('nickname-modal').style.display = 'flex';
   }
 
