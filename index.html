@@ -165,9 +165,10 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   <span class="cat-chip" data-cat="conv" onclick="toggleCat('conv',this)">🏪 コンビニ</span>
   <span class="cat-chip" data-cat="super" onclick="toggleCat('super',this)">🛒 スーパー</span>
   <span class="cat-chip" data-cat="drug" onclick="toggleCat('drug',this)">💊 ドラッグ/薬局</span>
+  <span class="cat-chip" data-cat="hosp" onclick="toggleCat('hosp',this)">🏥 病院</span>
   <span class="cat-chip" data-cat="home" onclick="toggleCat('home',this)">🔨 ホームセンター</span>
   <span class="cat-chip" data-cat="hyaku" onclick="toggleCat('hyaku',this)">🪙 100均</span>
-  <span id="osm-hint">カテゴリを選ぶと店舗が表示されます</span>
+  <span id="osm-hint">タップで絞り込みできます</span>
   <button id="chain-admin-btn" onclick="openChainModal()" title="チェーン一括（管理者）">🛠</button>
 </div>
 
@@ -193,6 +194,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
       <option value="conv">🏪 コンビニ</option>
       <option value="super">🛒 スーパー</option>
       <option value="drug">💊 ドラッグ/薬局</option>
+      <option value="hosp">🏥 病院</option>
       <option value="home">🔨 ホームセンター</option>
       <option value="hyaku">🪙 100均</option>
     </select>
@@ -216,7 +218,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   </div>
   <div class="btn-row">
     <button id="cancel-btn" onclick="cancelPin()">キャンセル</button>
-    <button id="submit-btn" onclick="submitReport()">📤 送信する</button>
+    <button id="submit-btn" onclick="submitReport()">📤 報告する</button>
   </div>
 </div>
 
@@ -677,12 +679,13 @@ const CAT_META = {
   conv:  { label:'コンビニ',       emoji:'🏪', color:'#8e44ad' },
   super: { label:'スーパー',        emoji:'🛒', color:'#2980b9' },
   drug:  { label:'ドラッグ/薬局',   emoji:'💊', color:'#00897b' },
+  hosp:  { label:'病院',           emoji:'🏥', color:'#3949ab' },
   home:  { label:'ホームセンター',  emoji:'🔨', color:'#e91e63' },
   hyaku: { label:'100均',          emoji:'🪙', color:'#fb8c00' }
 };
 let osmLayer = null;
 let osmStores = {};             // id -> {id,cat,lat,lng,name,brand}（取得済みを蓄積）
-let selectedCats = new Set();   // 表示中カテゴリ
+let selectedCats = new Set(['conv','super','drug','hosp','home','hyaku']);   // 表示中カテゴリ（起動時すべてオン）
 let osmFetchedKeys = new Set(); // 取得済みエリア（重複取得の抑制）
 let osmAbort = null;
 let osmTimer = null;
@@ -693,6 +696,7 @@ function osmCategorize(t) {
   if(t.shop==='convenience') return 'conv';
   if(t.shop==='supermarket') return 'super';
   if(t.shop==='chemist'||t.shop==='pharmacy'||t.amenity==='pharmacy'||t.healthcare==='pharmacy') return 'drug';
+  if(t.amenity==='hospital'||t.amenity==='clinic'||t.amenity==='doctors'||t.healthcare==='hospital'||t.healthcare==='clinic') return 'hosp';
   if(t.shop==='doityourself'||t.shop==='hardware'||t.shop==='trade') return 'home';
   return null;
 }
@@ -724,6 +728,8 @@ function osmBboxQuery(b) {
     + 'nwr["shop"="pharmacy"]'+bb+';'
     + 'nwr["amenity"="pharmacy"]'+bb+';'
     + 'nwr["healthcare"="pharmacy"]'+bb+';'
+    + 'nwr["amenity"="hospital"]'+bb+';'
+    + 'nwr["amenity"="clinic"]'+bb+';'
     + 'nwr["shop"="doityourself"]'+bb+';'
     + 'nwr["shop"="hardware"]'+bb+';'
     + 'nwr["shop"="trade"]'+bb+';'
@@ -764,7 +770,7 @@ async function osmFetch(query, signal) {
 // Overpassはアプリ実行中には一切叩かない（事前に store_data_fetch.html で取得済み）。
 let osmLoaded = false;
 function fetchOsmStores() {
-  if(selectedCats.size===0) { if(osmLayer) osmLayer.clearLayers(); osmSetHint('カテゴリを選ぶと店舗が表示されます'); return; }
+  if(selectedCats.size===0) { if(osmLayer) osmLayer.clearLayers(); osmSetHint('タップで絞り込みできます'); return; }
   if(map.getZoom() < OSM_MIN_ZOOM) { if(osmLayer) osmLayer.clearLayers(); osmSetHint('🔍 地図を拡大すると店舗が表示されます'); return; }
 
   // 初回だけ同梱データを osmStores に展開
@@ -1091,8 +1097,7 @@ window.addEventListener('load', function() {
     clearTimeout(osmTimer);
     osmTimer = setTimeout(fetchOsmStores, 600);
   });
-
-  // 起動時は4カテゴリすべてON（チップを点灯させて初期取得）
+  // 起動時はすべてのカテゴリをON（チップを点灯させて初期取得）
   document.querySelectorAll('.cat-chip').forEach(function(el) {
     const cat = el.getAttribute('data-cat');
     if(!CAT_META[cat]) return;
@@ -1143,5 +1148,8 @@ window.addEventListener('load', function() {
   setInterval(function() { renderOsmStores(); }, 60000);
 });
 </script>
+<div style="text-align:center;padding:6px 16px 22px;background:#f5f5f2">
+  <a href="https://aki3oka3.github.io/machi-map/" style="font-size:12px;color:#c0392b;text-decoration:none;font-weight:600">🗺 まちのマップ（アプリ一覧）へ</a>
+</div>
 </body>
 </html>
