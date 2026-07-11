@@ -221,9 +221,10 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   <input type="hidden" id="original-store-name" value="">
   <input type="hidden" id="osm-id" value="">
   <div class="form-row">
-    <label>店舗名・場所（名前はこの欄で直せます）</label>
+    <label>店舗名・場所</label>
     <div style="display:flex;gap:6px;align-items:stretch">
       <input type="text" id="store-name" placeholder="例：セブンイレブン" style="flex:1;min-width:0">
+      <button type="button" id="store-rename-btn" onclick="enableNameEdit()" style="display:none;flex-shrink:0;font-size:11px;padding:0 10px;border-radius:6px;border:1px solid #c0392b;background:#fff;color:#c0392b;cursor:pointer;white-space:nowrap">✏️ 名称変更</button>
       <button type="button" id="store-del-btn" onclick="removeCurrentStore()" style="display:none;flex-shrink:0;font-size:11px;padding:0 10px;border-radius:6px;border:1px solid #e0b0b0;background:#fff;color:#c0392b;cursor:pointer;white-space:nowrap">🗑️ 削除</button>
     </div>
   </div>
@@ -370,19 +371,62 @@ function rebuildRemovedOsmIds() {
     if(d.status === 'removed' && d.osmId) removedOsmIds.add(String(d.osmId));
   });
 }
+// 店舗名を編集可能にする（✏️ 名称変更ボタン）
+let nameEditTemp = false; // 名称変更ボタン経由の一時編集モード
+function enableNameEdit() {
+  const inp = document.getElementById('store-name');
+  inp.readOnly = false;
+  inp.style.background = '#fff';
+  inp.focus();
+  inp.select();
+  document.getElementById('store-rename-btn').style.display = 'none';
+  nameEditTemp = true;
+  showToast('✏️ 名前を直して、そのまま報告してください');
+}
+// 編集を終えて他の欄に移ったら、表示モードに戻して名称変更ボタンを復活
+document.addEventListener('DOMContentLoaded', function(){
+  document.getElementById('store-name').addEventListener('blur', function(){
+    if(!nameEditTemp) return;
+    nameEditTemp = false;
+    const inp = document.getElementById('store-name');
+    // 空白のまま確定しようとしたら元の名前に戻す
+    if(!inp.value.trim()) {
+      inp.value = document.getElementById('original-store-name').value;
+      showToast('店舗名は空にできないため、元の名前に戻しました');
+    }
+    setNameReadonly(true);
+  });
+});
+// 店舗名欄を「表示モード」（readonly）にする
+function setNameReadonly(ro) {
+  const inp = document.getElementById('store-name');
+  inp.readOnly = ro;
+  inp.style.background = ro ? '#f5f5f2' : '#fff';
+  document.getElementById('store-rename-btn').style.display = ro ? 'block' : 'none';
+}
 // 報告パネルからの削除（店舗名横の🗑️ボタン）
+// OSM店舗＝店ごと削除（removed）／手動追加の報告＝自分の報告の取り消し
 async function removeCurrentStore() {
   const osmId = document.getElementById('osm-id').value.trim();
-  if(!osmId) return;
-  const nm = document.getElementById('store-name').value.trim()
-    || document.getElementById('original-store-name').value.trim();
-  const s = osmStores[osmId] || {
-    id: osmId, name: nm,
-    cat: document.getElementById('report-category').value,
-    lat: tapLat, lng: tapLng
-  };
-  const done = await removeOsmStore(s);
-  if(done) cancelPin();
+  if(osmId) {
+    const nm = document.getElementById('store-name').value.trim()
+      || document.getElementById('original-store-name').value.trim();
+    const s = osmStores[osmId] || {
+      id: osmId, name: nm,
+      cat: document.getElementById('report-category').value,
+      lat: tapLat, lng: tapLng
+    };
+    const done = await removeOsmStore(s);
+    if(done) cancelPin();
+  } else if(editingId) {
+    const d = allReports.find(r => String(r.id) === String(editingId));
+    if(!d) return;
+    if(!isMyPost(d.id)) { showToast('⚠️ 自分が登録した情報のみ削除できます'); return; }
+    const ok = await askConfirm('「' + d.storeName + '」の情報を削除しますか？', '削除する');
+    if(!ok) return;
+    deleteReport(d);
+    cancelPin();
+  }
 }
 async function removeOsmStore(s) {
   const nm = resolveOsmName(s);
@@ -516,7 +560,11 @@ function locateMe() {
 
 // ── キャンセル ──
 function cancelPin() {
+  nameEditTemp = false;
   document.getElementById('store-del-btn').style.display = 'none';
+  document.getElementById('store-rename-btn').style.display = 'none';
+  const _sn = document.getElementById('store-name');
+  _sn.readOnly = false; _sn.style.background = '#fff';
   if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
   tapLat = null; tapLng = null;
   editingId = null;
@@ -533,7 +581,8 @@ function cancelPin() {
 
 // ── 更新フォームを開く ──
 function openUpdateForm(d) {
-  document.getElementById('store-del-btn').style.display = (d.osmId ? 'block' : 'none');
+  document.getElementById('store-del-btn').style.display = 'block';
+  setNameReadonly(true);
   editingId = d.id || null;
   tapLat = d.lat; tapLng = d.lng;
   const dispName = reportDisplayName(d);
@@ -550,13 +599,7 @@ function openUpdateForm(d) {
   map.closePopup();
 }
 
-// ── 削除 ──
-async function askNameForDelete(d) {
-  if(!isMyPost(d.id)) { showToast('⚠️ 自分が登録した情報のみ削除できます'); return; }
-  const ok = await askConfirm('「' + d.storeName + '」の情報を削除しますか？', '削除する');
-  if(!ok) return;
-  deleteReport(d);
-}
+// ── 削除（呼び出しはパネル内の🗑️ボタン＝removeCurrentStore経由）──
 async function deleteReport(d) {
   try {
     await apiCall({
@@ -734,13 +777,6 @@ function createMarker(d) {
   upd.textContent = '✏️ この情報を更新する';
   upd.onclick = () => openUpdateForm(d);
   div.appendChild(upd);
-  if(isMyPost(d.id)) {
-    const del = document.createElement('button');
-    del.className = 'popup-btn popup-btn-delete';
-    del.textContent = '🗑️ この情報を削除する';
-    del.onclick = () => askNameForDelete(d);
-    div.appendChild(del);
-  }
   m.bindPopup(div);
   markers.push(m);
   if(reportVisible(m._reportCat)) m.addTo(map);
@@ -786,13 +822,6 @@ function renderList(data) {
     upd.textContent = '更新';
     upd.onclick = () => { openUpdateForm(d); };
     right.appendChild(upd);
-    if(isMyPost(d.id)) {
-      const del = document.createElement('button');
-      del.className = 'del-btn';
-      del.textContent = '削除';
-      del.onclick = () => askNameForDelete(d);
-      right.appendChild(del);
-    }
     c.appendChild(item);
   });
 }
@@ -1053,6 +1082,7 @@ function reportOsmStore(s) {
   document.getElementById('store-name').value = resolved;
   document.getElementById('original-store-name').value = resolved;
   document.getElementById('store-del-btn').style.display = 'block';
+  setNameReadonly(true);
   document.getElementById('osm-id').value = s.id || '';
   document.getElementById('report-category').value = (s.cat && CAT_META[s.cat]) ? s.cat : '';
   document.getElementById('comment').value = '';
@@ -1331,6 +1361,10 @@ window.addEventListener('load', function() {
       className: '', iconAnchor:[10,10]
     });
     tempMarker = L.marker([tapLat, tapLng], {icon}).addTo(map);
+    // 新規報告：名称は自由入力、変更・削除ボタンは対象がないので非表示
+    document.getElementById('store-del-btn').style.display = 'none';
+    document.getElementById('store-rename-btn').style.display = 'none';
+    setNameReadonly(false);
     document.getElementById('panel').style.display = 'block';
     document.getElementById('pin-coords').textContent = 'タップした場所：' + tapLat + ', ' + tapLng;
     document.getElementById('map-hint').textContent = '✏️ 下のフォームに店舗情報を入力してください';
