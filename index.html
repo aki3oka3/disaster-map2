@@ -147,7 +147,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
     <div class="g-sub">台風や停電のとき、「どのお店が開いているか」をみんなで共有するアプリです。</div>
     <div class="g-step">
       <div class="g-icon">👀</div>
-      <div class="g-text"><b>見る</b><br>ピンの色が営業状況です。<span style="color:#1a7a35;font-weight:700">緑=営業中</span>、<span style="color:#996600;font-weight:700">黄=時短/品薄</span>、<span style="color:#c0392b;font-weight:700">赤=閉店</span>。上のボタンでコンビニ・スーパーなどの絞り込みもできます。</div>
+      <div class="g-text"><b>見る</b><br>ピンの色が営業状況です。<span style="color:#1a7a35;font-weight:700">緑=営業・診療中</span>、<span style="color:#996600;font-weight:700">黄=時短/品薄・一部診療</span>、<span style="color:#c0392b;font-weight:700">赤=閉店・休診</span>。上のボタンでコンビニ・スーパーなどの絞り込みもできます。</div>
     </div>
     <div class="g-step">
       <div class="g-icon">✏️</div>
@@ -187,9 +187,9 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
 </div>
 
 <div id="legend">
-  <div class="legend-item"><div class="dot open"></div><span>営業中</span></div>
-  <div class="legend-item"><div class="dot limited"></div><span>時短/品薄</span></div>
-  <div class="legend-item"><div class="dot closed"></div><span>閉店</span></div>
+  <div class="legend-item"><div class="dot open"></div><span>営業・診療中</span></div>
+  <div class="legend-item"><div class="dot limited"></div><span>時短/品薄・一部診療</span></div>
+  <div class="legend-item"><div class="dot closed"></div><span>閉店・休診</span></div>
 </div>
 
 <div id="cat-bar">
@@ -230,7 +230,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   </div>
   <div class="form-row">
     <label>カテゴリ</label>
-    <select id="report-category">
+    <select id="report-category" onchange="updateStatusButtonLabels()">
       <option value="">その他（常に表示）</option>
       <option value="conv">🏪 コンビニ</option>
       <option value="super">🛒 スーパー</option>
@@ -512,10 +512,24 @@ function selectStatus(s) {
     document.getElementById('btn-'+t).className = 'status-btn' + (t===s ? ' active-'+t : '');
   });
 }
-function getStatusLabel(s) {
-  if(s==='open') return '<span class="tag-open">🟢 営業中</span>';
-  if(s==='limited') return '<span class="tag-limited">🟡 時短/品薄</span>';
-  return '<span class="tag-closed">🔴 閉店</span>';
+// 状況の言葉：病院カテゴリは「診療」の言葉に切り替える（データ上は同じ open/limited/closed）
+function statusWord(s, cat) {
+  const hosp = (cat === 'hosp');
+  if(s==='open') return hosp ? '診療中' : '営業中';
+  if(s==='limited') return hosp ? '時間短縮・一部診療' : '時短/品薄';
+  return hosp ? '休診' : '閉店';
+}
+function getStatusLabel(s, cat) {
+  if(s==='open') return '<span class="tag-open">🟢 '+statusWord(s,cat)+'</span>';
+  if(s==='limited') return '<span class="tag-limited">🟡 '+statusWord(s,cat)+'</span>';
+  return '<span class="tag-closed">🔴 '+statusWord(s,cat)+'</span>';
+}
+// 報告パネルの状況ボタンの文言をカテゴリに合わせて更新
+function updateStatusButtonLabels() {
+  const cat = document.getElementById('report-category').value;
+  document.getElementById('btn-open').textContent = '🟢 ' + statusWord('open', cat);
+  document.getElementById('btn-limited').textContent = '🟡 ' + statusWord('limited', cat);
+  document.getElementById('btn-closed').textContent = '🔴 ' + statusWord('closed', cat);
 }
 function getMarkerColor(s) {
   if(s==='open') return '#27ae60';
@@ -591,6 +605,7 @@ function openUpdateForm(d) {
   document.getElementById('osm-id').value = d.osmId || '';
   document.getElementById('comment').value = d.comment || '';
   document.getElementById('report-category').value = (d.category && CAT_META[d.category]) ? d.category : '';
+  updateStatusButtonLabels();
   selectStatus(safeStatus(d.status));
   document.getElementById('panel').style.display = 'block';
   document.getElementById('pin-coords').textContent = '更新中：' + d.storeName;
@@ -713,7 +728,7 @@ function renderSearchResults(list,qRaw){
     el.className="sr-item";
     const dotStyle=r.status?("background:"+getMarkerColor(r.status)+";border-color:"+getMarkerColor(r.status)):"";
     const catLabel=(CAT_META[r.cat]?CAT_META[r.cat].emoji+" "+CAT_META[r.cat].label:"");
-    el.innerHTML='<span class="sr-dot" style="'+dotStyle+'"></span><span class="sr-name">'+esc(r.name)+'</span><span class="sr-cat">'+catLabel+(r.status?"・"+getStatusLabel(r.status).replace(/<[^>]*>/g,""):"")+'</span>';
+    el.innerHTML='<span class="sr-dot" style="'+dotStyle+'"></span><span class="sr-name">'+esc(r.name)+'</span><span class="sr-cat">'+catLabel+(r.status?"・"+getStatusLabel(r.status, r.cat).replace(/<[^>]*>/g,""):"")+'</span>';
     el.onclick=function(){gotoSearchResult(r);};
     box.appendChild(el);
   });
@@ -769,7 +784,7 @@ function createMarker(d) {
   const div = document.createElement('div');
   div.innerHTML =
     '<b style="font-size:13px;">'+esc(reportDisplayName(d))+'</b><br>' +
-    getStatusLabel(st)+'<br>' +
+    getStatusLabel(st, d.category)+'<br>' +
     (d.comment ? '<span style="font-size:12px;">'+esc(d.comment)+'</span><br>' : '') +
     '<span style="font-size:12px;color:#555;display:block;margin-top:4px;">🔄 更新：'+esc(formatDate(d.timestamp))+'</span>';
   const upd = document.createElement('button');
@@ -808,7 +823,7 @@ function renderList(data) {
         '<div class="store-name">'+esc(reportDisplayName(d))+'</div>' +
         '<div class="store-time">'+(d.comment ? esc(d.comment)+' · ' : '')+esc(formatDate(d.timestamp))+'</div>' +
       '</div>' +
-      '<div class="store-right">' + getStatusLabel(st) + '</div>';
+      '<div class="store-right">' + getStatusLabel(st, d.category) + '</div>';
     const right = item.querySelector('.store-right');
     // 地図でその店へ寄るボタン
     const go = document.createElement('button');
@@ -1085,6 +1100,7 @@ function reportOsmStore(s) {
   setNameReadonly(true);
   document.getElementById('osm-id').value = s.id || '';
   document.getElementById('report-category').value = (s.cat && CAT_META[s.cat]) ? s.cat : '';
+  updateStatusButtonLabels();
   document.getElementById('comment').value = '';
   document.getElementById('panel').style.display = 'block';
   document.getElementById('pin-coords').textContent = 'タップした場所：' + tapLat + ', ' + tapLng;
@@ -1365,6 +1381,7 @@ window.addEventListener('load', function() {
     document.getElementById('store-del-btn').style.display = 'none';
     document.getElementById('store-rename-btn').style.display = 'none';
     setNameReadonly(false);
+    updateStatusButtonLabels();
     document.getElementById('panel').style.display = 'block';
     document.getElementById('pin-coords').textContent = 'タップした場所：' + tapLat + ', ' + tapLng;
     document.getElementById('map-hint').textContent = '✏️ 下のフォームに店舗情報を入力してください';
