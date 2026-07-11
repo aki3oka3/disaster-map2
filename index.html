@@ -221,8 +221,11 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   <input type="hidden" id="original-store-name" value="">
   <input type="hidden" id="osm-id" value="">
   <div class="form-row">
-    <label>店舗名・場所</label>
-    <input type="text" id="store-name" placeholder="例：セブンイレブン">
+    <label>店舗名・場所（名前はこの欄で直せます）</label>
+    <div style="display:flex;gap:6px;align-items:stretch">
+      <input type="text" id="store-name" placeholder="例：セブンイレブン" style="flex:1;min-width:0">
+      <button type="button" id="store-del-btn" onclick="removeCurrentStore()" style="display:none;flex-shrink:0;font-size:11px;padding:0 10px;border-radius:6px;border:1px solid #e0b0b0;background:#fff;color:#c0392b;cursor:pointer;white-space:nowrap">🗑️ 削除</button>
+    </div>
   </div>
   <div class="form-row">
     <label>カテゴリ</label>
@@ -367,12 +370,26 @@ function rebuildRemovedOsmIds() {
     if(d.status === 'removed' && d.osmId) removedOsmIds.add(String(d.osmId));
   });
 }
+// 報告パネルからの削除（店舗名横の🗑️ボタン）
+async function removeCurrentStore() {
+  const osmId = document.getElementById('osm-id').value.trim();
+  if(!osmId) return;
+  const nm = document.getElementById('store-name').value.trim()
+    || document.getElementById('original-store-name').value.trim();
+  const s = osmStores[osmId] || {
+    id: osmId, name: nm,
+    cat: document.getElementById('report-category').value,
+    lat: tapLat, lng: tapLng
+  };
+  const done = await removeOsmStore(s);
+  if(done) cancelPin();
+}
 async function removeOsmStore(s) {
   const nm = resolveOsmName(s);
   const ok = await askConfirm('「' + nm + '」を地図から削除しますか？\n（閉店・実在しないお店の場合）\n※みんなの画面からも消えます', '削除する');
-  if(!ok) return;
+  if(!ok) return false;
   const rName = localStorage.getItem('disaster_nickname') || '';
-  if(!rName) { document.getElementById('nickname-modal').style.display='flex'; return; }
+  if(!rName) { document.getElementById('nickname-modal').style.display='flex'; return false; }
   // 楽観的更新：先に画面から消す
   removedOsmIds.add(String(s.id));
   map.closePopup();
@@ -396,6 +413,7 @@ async function removeOsmStore(s) {
   } catch(e) {
     showToast('⚠️ サーバーへの記録に失敗しました');
   }
+  return true;
 }
 
 // ── GAS通信（HTTPエラー・サーバーのエラー応答を検知して例外にする）──
@@ -498,6 +516,7 @@ function locateMe() {
 
 // ── キャンセル ──
 function cancelPin() {
+  document.getElementById('store-del-btn').style.display = 'none';
   if(tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
   tapLat = null; tapLng = null;
   editingId = null;
@@ -514,6 +533,7 @@ function cancelPin() {
 
 // ── 更新フォームを開く ──
 function openUpdateForm(d) {
+  document.getElementById('store-del-btn').style.display = (d.osmId ? 'block' : 'none');
   editingId = d.id || null;
   tapLat = d.lat; tapLng = d.lng;
   const dispName = reportDisplayName(d);
@@ -693,6 +713,7 @@ function clearSearch(){
 
 function createMarker(d) {
   if(d.status === 'removed') return; // 店舗削除マークはピンを立てない
+  if(d.osmId && removedOsmIds.has(String(d.osmId))) return; // 削除済み店舗の旧報告も出さない
   if(!d.lat || !d.lng) return;
   if(isStale(d.timestamp)) return; // 3日以上前は地図に出さない
   const st = safeStatus(d.status);
@@ -1006,12 +1027,6 @@ function renderOsmStores() {
     btn.textContent = '📤 この店の状況を報告する';
     btn.onclick = () => reportOsmStore(s);
     div.appendChild(btn);
-    const delBtn = document.createElement('button');
-    delBtn.className = 'popup-btn';
-    delBtn.style.cssText = 'background:#fff;color:#c0392b;border:1px solid #e0b0b0;font-size:11px;margin-top:4px;';
-    delBtn.textContent = '🗑️ この店はもう無い（地図から削除）';
-    delBtn.onclick = () => removeOsmStore(s);
-    div.appendChild(delBtn);
     m.bindPopup(div);
     osmLayer.addLayer(m);
     n++;
@@ -1037,6 +1052,7 @@ function reportOsmStore(s) {
   const resolved = resolveOsmName(s);
   document.getElementById('store-name').value = resolved;
   document.getElementById('original-store-name').value = resolved;
+  document.getElementById('store-del-btn').style.display = 'block';
   document.getElementById('osm-id').value = s.id || '';
   document.getElementById('report-category').value = (s.cat && CAT_META[s.cat]) ? s.cat : '';
   document.getElementById('comment').value = '';
