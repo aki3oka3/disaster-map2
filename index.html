@@ -197,8 +197,11 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   <span class="cat-chip" data-cat="super" onclick="toggleCat('super',this)">🛒 スーパー</span>
   <span class="cat-chip" data-cat="drug" onclick="toggleCat('drug',this)">💊 ドラッグ/薬局</span>
   <span class="cat-chip" data-cat="hosp" onclick="toggleCat('hosp',this)">🏥 病院</span>
+  <span class="cat-chip" data-cat="fuel" onclick="toggleCat('fuel',this)">⛽ ガソリン</span>
+  <span class="cat-chip" data-cat="laundry" onclick="toggleCat('laundry',this)">🧺 ランドリー</span>
   <span class="cat-chip" data-cat="home" onclick="toggleCat('home',this)">🔨 ホームセンター</span>
   <span class="cat-chip" data-cat="hyaku" onclick="toggleCat('hyaku',this)">🪙 100均</span>
+  <span class="cat-chip" data-cat="oth" onclick="toggleCat('oth',this)">📌 その他</span>
   <span id="osm-hint">タップで絞り込みできます</span>
   <button id="chain-admin-btn" onclick="openChainModal()" title="チェーン一括（管理者）">🛠</button>
 </div>
@@ -231,11 +234,13 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
   <div class="form-row">
     <label>カテゴリ</label>
     <select id="report-category" onchange="updateStatusButtonLabels()">
-      <option value="">その他（常に表示）</option>
+      <option value="oth">📌 その他</option>
       <option value="conv">🏪 コンビニ</option>
       <option value="super">🛒 スーパー</option>
       <option value="drug">💊 ドラッグ/薬局</option>
       <option value="hosp">🏥 病院</option>
+      <option value="fuel">⛽ ガソリン</option>
+      <option value="laundry">🧺 ランドリー</option>
       <option value="home">🔨 ホームセンター</option>
       <option value="hyaku">🪙 100均</option>
     </select>
@@ -604,7 +609,7 @@ function openUpdateForm(d) {
   document.getElementById('original-store-name').value = d.storeName || dispName;
   document.getElementById('osm-id').value = d.osmId || '';
   document.getElementById('comment').value = d.comment || '';
-  document.getElementById('report-category').value = (d.category && CAT_META[d.category]) ? d.category : '';
+  document.getElementById('report-category').value = (d.category && CAT_META[d.category]) ? d.category : 'oth';
   updateStatusButtonLabels();
   selectStatus(safeStatus(d.status));
   document.getElementById('panel').style.display = 'block';
@@ -637,8 +642,9 @@ async function deleteReport(d) {
 // （文字列連結のonclickは引用符やタグの混入に弱いため使わない）
 // 報告ピンを表示してよいか（未分類・その他は常に表示、4カテゴリは選択中のみ）
 function reportVisible(cat) {
-  if(!cat || !CAT_META[cat]) return true;
-  return selectedCats.has(cat);
+  // カテゴリ未設定・不明は「その他」として扱う（「その他」チップでON/OFFできる）
+  const k = (cat && CAT_META[cat]) ? cat : 'oth';
+  return selectedCats.has(k);
 }
 // カテゴリのON/OFFに応じて報告ピンの表示を切替（データは消さず、表示だけ）
 function applyReportFilter() {
@@ -697,7 +703,7 @@ function searchStores(qRaw){
     if(isStale(d.timestamp))return;
     if(d.lat==null||d.lng==null)return;
     const nm=reportDisplayName(d);
-    if(normSearch(nm).indexOf(q)>=0||normSearch(d.storeName).indexOf(q)>=0){
+    if(normSearch(nm).indexOf(q)>=0||normSearch(d.storeName).indexOf(q)>=0||normSearch(d.comment).indexOf(q)>=0){
       out.push({name:nm,lat:parseFloat(d.lat),lng:parseFloat(d.lng),status:safeStatus(d.status),cat:d.category||""});
       if(d.osmId)seen.add(String(d.osmId));
     }
@@ -727,7 +733,8 @@ function renderSearchResults(list,qRaw){
     const el=document.createElement("div");
     el.className="sr-item";
     const dotStyle=r.status?("background:"+getMarkerColor(r.status)+";border-color:"+getMarkerColor(r.status)):"";
-    const catLabel=(CAT_META[r.cat]?CAT_META[r.cat].emoji+" "+CAT_META[r.cat].label:"");
+    const _cm=CAT_META[r.cat]||CAT_META.oth;
+    const catLabel=_cm.emoji+" "+_cm.label;
     el.innerHTML='<span class="sr-dot" style="'+dotStyle+'"></span><span class="sr-name">'+esc(r.name)+'</span><span class="sr-cat">'+catLabel+(r.status?"・"+getStatusLabel(r.status, r.cat).replace(/<[^>]*>/g,""):"")+'</span>';
     el.onclick=function(){gotoSearchResult(r);};
     box.appendChild(el);
@@ -925,12 +932,15 @@ const CAT_META = {
   super: { label:'スーパー',        emoji:'🛒', color:'#2980b9' },
   drug:  { label:'ドラッグ/薬局',   emoji:'💊', color:'#00897b' },
   hosp:  { label:'病院',           emoji:'🏥', color:'#3949ab' },
+  fuel:  { label:'ガソリン',        emoji:'⛽', color:'#6d4c41' },
+  laundry:{ label:'ランドリー',     emoji:'🧺', color:'#00acc1' },
   home:  { label:'ホームセンター',  emoji:'🔨', color:'#e91e63' },
-  hyaku: { label:'100均',          emoji:'🪙', color:'#fb8c00' }
+  hyaku: { label:'100均',          emoji:'🪙', color:'#fb8c00' },
+  oth:   { label:'その他',         emoji:'📌', color:'#7a8794' }
 };
 let osmLayer = null;
 let osmStores = {};             // id -> {id,cat,lat,lng,name,brand}（取得済みを蓄積）
-let selectedCats = new Set(['conv','super','drug','hosp','home','hyaku']);   // 表示中カテゴリ（起動時すべてオン）
+let selectedCats = new Set(['conv','super','drug','hosp','fuel','laundry','home','hyaku','oth']);   // 表示中カテゴリ（起動時すべてオン）
 let osmFetchedKeys = new Set(); // 取得済みエリア（重複取得の抑制）
 let osmAbort = null;
 let osmTimer = null;
@@ -1099,7 +1109,7 @@ function reportOsmStore(s) {
   document.getElementById('store-del-btn').style.display = 'block';
   setNameReadonly(true);
   document.getElementById('osm-id').value = s.id || '';
-  document.getElementById('report-category').value = (s.cat && CAT_META[s.cat]) ? s.cat : '';
+  document.getElementById('report-category').value = (s.cat && CAT_META[s.cat]) ? s.cat : 'oth';
   updateStatusButtonLabels();
   document.getElementById('comment').value = '';
   document.getElementById('panel').style.display = 'block';
