@@ -819,8 +819,14 @@ function renderList(data) {
     d.status !== 'removed' &&
     !isStale(d.timestamp) &&
     d.lat != null && d.lng != null &&
-    bounds.contains([parseFloat(d.lat), parseFloat(d.lng)])
+    bounds.contains([parseFloat(d.lat), parseFloat(d.lng)]) &&
+    reportVisible(d.category)   // 選択中カテゴリのみ（ピンと一覧を連動）
   );
+  // 新しい報告が上（まちのいまと同じ基準）
+  fresh.sort((a, b) => {
+    const da = parseReportDate(a.timestamp), db = parseReportDate(b.timestamp);
+    return (db ? db.getTime() : 0) - (da ? da.getTime() : 0);
+  });
   if(fresh.length === 0) {
     c.innerHTML = '<div style="text-align:center;color:#aaa;font-size:13px;padding:20px;">この範囲に報告はありません<br><span style="font-size:11px;">地図を動かすと切り替わります</span></div>';
     return;
@@ -991,6 +997,7 @@ function selectAllCats() {
   paintChips();
   fetchOsmStores();
   applyReportFilter();
+  renderList();
 }
 function toggleCat(cat, el) {
   if(allMode) {
@@ -1007,6 +1014,7 @@ function toggleCat(cat, el) {
   paintChips();
   fetchOsmStores();
   applyReportFilter();
+  renderList();
 }
 
 function osmBboxQuery(b) {
