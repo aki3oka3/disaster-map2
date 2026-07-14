@@ -147,7 +147,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
     <div class="g-sub">台風や停電のとき、「どのお店が開いているか」をみんなで共有するアプリです。</div>
     <div class="g-step">
       <div class="g-icon">👀</div>
-      <div class="g-text"><b>見る</b><br>ピンの色が営業状況です。<span style="color:#1a7a35;font-weight:700">緑=営業・診療中</span>、<span style="color:#996600;font-weight:700">黄=時短/品薄・一部診療</span>、<span style="color:#c0392b;font-weight:700">赤=閉店・休診</span>。上のボタンでコンビニ・スーパーなどの絞り込みもできます。</div>
+      <div class="g-text"><b>見る</b><br>ピンの色が営業状況です。<span style="color:#1a7a35;font-weight:700">緑=営業・診療中</span>、<span style="color:#996600;font-weight:700">黄=時短/品薄・一部診療</span>、<span style="color:#c0392b;font-weight:700">赤=閉店・休診</span>。上のボタンをひとつタップすると<b>その種類だけ</b>を表示（例：薬局だけ）。「✅ すべて」で全表示に戻ります。</div>
     </div>
     <div class="g-step">
       <div class="g-icon">🔍</div>
@@ -197,6 +197,7 @@ body { font-family: 'Hiragino Sans', 'Meiryo', sans-serif; background: #f5f5f0; 
 </div>
 
 <div id="cat-bar">
+  <span class="cat-chip" id="chip-all" onclick="selectAllCats()">✅ すべて</span>
   <span class="cat-chip" data-cat="conv" onclick="toggleCat('conv',this)">🏪 コンビニ</span>
   <span class="cat-chip" data-cat="super" onclick="toggleCat('super',this)">🛒 スーパー</span>
   <span class="cat-chip" data-cat="drug" onclick="toggleCat('drug',this)">💊 ドラッグ/薬局</span>
@@ -966,14 +967,44 @@ function osmSetHint(msg) {
 }
 
 // カテゴリチップのON/OFF
+const ALL_CATS = Object.keys(CAT_META);
+let allMode = true;  // 「すべて」表示中か
+function paintChips() {
+  const allEl = document.getElementById('chip-all');
+  if(allEl) {
+    allEl.style.background = allMode ? '#333' : '#fff';
+    allEl.style.borderColor = allMode ? '#333' : '#ddd';
+    allEl.style.color = allMode ? '#fff' : '#666';
+  }
+  document.querySelectorAll('.cat-chip[data-cat]').forEach(function(el) {
+    const cat = el.getAttribute('data-cat');
+    if(!CAT_META[cat]) return;
+    const on = selectedCats.has(cat);
+    el.style.background = on ? CAT_META[cat].color : '#fff';
+    el.style.borderColor = on ? CAT_META[cat].color : '#ddd';
+    el.style.color = on ? '#fff' : '#666';
+  });
+}
+function selectAllCats() {
+  allMode = true;
+  selectedCats = new Set(ALL_CATS);
+  paintChips();
+  fetchOsmStores();
+  applyReportFilter();
+}
 function toggleCat(cat, el) {
-  if(selectedCats.has(cat)) {
+  if(allMode) {
+    // 全表示中に個別タップ → そのカテゴリだけ表示（1タップ絞り込み）
+    allMode = false;
+    selectedCats = new Set([cat]);
+  } else if(selectedCats.has(cat)) {
     selectedCats.delete(cat);
-    el.style.background='#fff'; el.style.borderColor='#ddd'; el.style.color='#666';
+    if(selectedCats.size === 0) { allMode = true; selectedCats = new Set(ALL_CATS); }  // 全部消えたら「すべて」に戻る
   } else {
     selectedCats.add(cat);
-    el.style.background=CAT_META[cat].color; el.style.borderColor=CAT_META[cat].color; el.style.color='#fff';
+    if(selectedCats.size === ALL_CATS.length) allMode = true;  // 全部選んだ＝すべて
   }
+  paintChips();
   fetchOsmStores();
   applyReportFilter();
 }
@@ -1360,15 +1391,10 @@ window.addEventListener('load', function() {
     clearTimeout(osmTimer);
     osmTimer = setTimeout(fetchOsmStores, 600);
   });
-  // 起動時はすべてのカテゴリをON（チップを点灯させて初期取得）
-  document.querySelectorAll('.cat-chip').forEach(function(el) {
-    const cat = el.getAttribute('data-cat');
-    if(!CAT_META[cat]) return;
-    selectedCats.add(cat);
-    el.style.background = CAT_META[cat].color;
-    el.style.borderColor = CAT_META[cat].color;
-    el.style.color = '#fff';
-  });
+  // 起動時はすべてのカテゴリをON
+  allMode = true;
+  selectedCats = new Set(ALL_CATS);
+  paintChips();
   // 地図の大きさが確定してから取得（直後だと範囲がほぼ点になり0件になるため）
   map.invalidateSize();
   setTimeout(fetchOsmStores, 700);
